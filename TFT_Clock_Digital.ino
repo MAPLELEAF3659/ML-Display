@@ -184,7 +184,6 @@ void loop()
       else
       {
         playerPlayingIndex = 0;
-        playerPlayingIndexPrevious = playerPlayingIndex;
       }
     }
 
@@ -236,6 +235,17 @@ void tftPrintDate()
 void tftPrintDHTInfo()
 {
   tft.setTextColor(0xFFFF, TFT_BLACK);
+
+  if (playerPlayingIndex == 0 && playerPlayingIndex != playerPlayingIndexPrevious)
+  {
+    // clear screen
+    ClearScreen(85, 160, 5);
+    // write temperature
+    tft.drawString("Temperature " + String(temperature < 10 ? "0" : "") + String(temperature, 1) + "C", xpos + 10, ypos + 80, 2);
+    // write humidity
+    tft.drawString("Humidity     " + String(humidity < 10 ? "0" : "") + String(humidity, 1) + "%", xpos + 10, ypos + 100, 2);
+    playerPlayingIndexPrevious = playerPlayingIndex;
+  }
 
   // check if temperature or humidity was updated
   if (temperature != temperaturePrevious)
