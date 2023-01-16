@@ -56,38 +56,39 @@ byte ypos = 10;
 
 //**DHT**
 DHTesp dht;
-void tempTask(void *pvParameters);
-bool getTemperature();
-void triggerGetTemp();
-/** Task handle for the light value read task */
-TaskHandle_t tempTaskHandle = NULL;
-/** Ticker for temperature reading */
-Ticker tempTicker;
-/** Comfort profile */
-ComfortState cf;
-/** Flag if task should run */
-bool tasksEnabled = false;
-/** Pin number for DHT11 data pin */
+// Pin number for DHT11 data pin
 int dhtPin = 17; // VCC=5V
+void DHTTask(void *pvParameters);
+bool getTemperature();
+void TriggerGetDHT();
+// Task handle for the light value read task
+TaskHandle_t dhtTaskHandle = NULL;
+// Ticker for temperature reading
+Ticker dhtTicker;
+// Comfort profile 
+ComfortState cf;
+// Flag if task should run
+bool tasksEnabled = false;
+// DHT info
 float temperature = 0;
 float humidity = 0;
 float temperaturePrevious = 0;
 float humidityPrevious = 0;
 //**DHT**
 
+//**Player API**
+const char *getPlayerInfoQuery = "http://192.168.0.100:8880/api/query?player=true&trcolumns=%25artist%25,%25title%25,%25album%25";
+String apiResponse = "";
+//**Player API**
+
 //**Player info**
 String artistName = "";
 String songName = "";
 String albumName = "";
-//**Player info**
-
-//**API**
-const char *getPlayerInfoQuery = "http://192.168.0.100:8880/api/query?player=true&trcolumns=%25artist%25,%25title%25,%25album%25";
-String apiRXData = "";
 bool isPlayerAvailable = false;
 int playerPlayingIndex = 0;
 int playerPlayingIndexPrevious = 0;
-//**API**
+//**Player info**
 
 void setup()
 {
@@ -166,10 +167,10 @@ void loop()
     tft.drawChar(timeinfo.tm_sec % 2 == 0 ? ':' : ' ', 74, ypos, 7);
 
     // try to get player info by api
-    apiRXData = HttpGETRequest(getPlayerInfoQuery);
-    if (apiRXData != "{}")
+    apiResponse = HttpGETRequest(getPlayerInfoQuery);
+    if (apiResponse != "{}")
     {
-      JSONVar jsonObj = JSON.parse(apiRXData);
+      JSONVar jsonObj = JSON.parse(apiResponse);
       isPlayerAvailable = JSON.stringify(jsonObj["player"]["playbackState"]) != "\"stopped\"";
       if (isPlayerAvailable)
       {
@@ -343,15 +344,15 @@ bool initTemp()
 
   // Start task to get temperature
   xTaskCreatePinnedToCore(
-      tempTask,        /* Function to implement the task */
-      "tempTask ",     /* Name of the task */
+      DHTTask,        /* Function to implement the task */
+      "DHTTask ",     /* Name of the task */
       4000,            /* Stack size in words */
       NULL,            /* Task input parameter */
       5,               /* Priority of the task */
-      &tempTaskHandle, /* Task handle. */
+      &dhtTaskHandle, /* Task handle. */
       1);              /* Core where the task should run */
 
-  if (tempTaskHandle == NULL)
+  if (dhtTaskHandle == NULL)
   {
     tft.println("[DHT11]Failed to start task for temperature update");
     return false;
@@ -359,8 +360,9 @@ bool initTemp()
   else
   {
     // Start update of environment data every XX seconds
-    tempTicker.attach(5, triggerGetTemp);
+    dhtTicker.attach(60, TriggerGetDHT);
   }
+  getTemperature();
   return true;
 }
 
@@ -369,11 +371,11 @@ bool initTemp()
    Sets flag dhtUpdated to true for handling in loop()
    called by Ticker getTempTimer
 */
-void triggerGetTemp()
+void TriggerGetDHT()
 {
-  if (tempTaskHandle != NULL)
+  if (dhtTaskHandle != NULL)
   {
-    xTaskResumeFromISR(tempTaskHandle);
+    xTaskResumeFromISR(dhtTaskHandle);
   }
 }
 
@@ -382,7 +384,7 @@ void triggerGetTemp()
    @param pvParameters
       pointer to task parameters
 */
-void tempTask(void *pvParameters)
+void DHTTask(void *pvParameters)
 {
   tft.println("[DHT11]Starts to get value.");
   while (1) // tempTask loop
