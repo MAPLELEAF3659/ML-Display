@@ -88,8 +88,14 @@ bool isPlayerApiAvailable = false;
 String artistName = "";
 String songName = "";
 String albumName = "";
-bool isPlayerPlaying = false;
-bool isPlayerPlayingPrevious = false;
+enum PlayerState
+{
+  Playing,
+  Paused,
+  Stopped
+};
+PlayerState playerState = Stopped;
+PlayerState playerStatePrevious = Stopped;
 int playerPlayingIndex = -1;
 int playerPlayingIndexPrevious = -1;
 //**Player info**
@@ -151,8 +157,21 @@ void loop()
     if (apiResponse != "{}")
     {
       JSONVar jsonObj = JSON.parse(apiResponse);
-      isPlayerPlaying = JSON.stringify(jsonObj["player"]["playbackState"]) != "\"stopped\"";
-      if (isPlayerPlaying)
+      char playerStateByJsonChar = JSON.stringify(jsonObj["player"]["playbackState"])[2];
+      switch (playerStateByJsonChar)
+      {
+      case 'l':
+        playerState = Playing;
+        break;
+      case 'a':
+        playerState = Paused;
+        break;
+      case 't':
+        playerState = Stopped;
+        break;
+      }
+
+      if (playerState == Playing)
       {
         playerPlayingIndex = jsonObj["player"]["activeItem"]["index"];
         artistName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][0]);
@@ -206,7 +225,8 @@ void loop()
       tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
       break;
     case 1: // player
-      TFTPrintPlayerInfo();
+      TFTPrintPlayerState();
+      TFTPrintPlayerMusicInfo();
       break;
     }
 
@@ -278,14 +298,20 @@ void ShowPlayerScreen()
   // update by sec
   if (timeinfo.tm_sec != secPrevious)
   {
+    if (playerStatePrevious != playerState)
+    {
+      TFTPrintPlayerState();
+      playerStatePrevious = playerState;
+    }
+
     // check if player current song was updated
     if (playerPlayingIndexPrevious != playerPlayingIndex)
     {
-      TFTPrintPlayerInfo();
+      TFTPrintPlayerMusicInfo();
       // update pervious state
       playerPlayingIndexPrevious = playerPlayingIndex;
     }
-    
+
     // blink ":"
     tft.setTextColor(0xFFFF, TFT_BLACK);
     tft.drawChar(timeinfo.tm_sec % 2 == 0 ? ':' : ' ', 17, 5, 1);
@@ -439,12 +465,12 @@ int TextColorByHumidity(float humi)
   }
 }
 
-void TFTPrintPlayerInfo()
+void TFTPrintPlayerMusicInfo()
 {
   // clear screen
   ClearScreen(80, 160, 5);
 
-  tft.setTextColor(isPlayerPlaying ? 0xFFFF : 0xF800, TFT_BLACK);
+  tft.setTextColor(0xFFFF, TFT_BLACK);
 
   // load han character
   tft.loadFont(Silver_16);
@@ -466,6 +492,28 @@ void TFTPrintPlayerInfo()
 
   // unload han character
   tft.unloadFont();
+}
+
+void TFTPrintPlayerState()
+{
+  // clear player state screen area
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString("           ", xpos, 20, 2);
+  switch (playerState)
+  {
+  case 0:
+    tft.setTextColor(0x07E0, TFT_BLACK);
+    tft.drawString("Playing >", xpos, 20, 2);
+    break;
+  case 1:
+    tft.setTextColor(0x001F, TFT_BLACK);
+    tft.drawString("Paused ||", xpos, 20, 2);
+    break;
+  case 2:
+    tft.setTextColor(0xF800, TFT_BLACK);
+    tft.drawString("Stopped []", xpos, 20, 2);
+    break;
+  }
 }
 
 size_t utf8len(char *s)
