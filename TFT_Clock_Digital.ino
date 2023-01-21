@@ -105,9 +105,9 @@ void setup()
   tft.setRotation(-1);
   tft.fillScreen(TFT_BLACK);
 
-  tft.setTextColor(TFT_YELLOW, TFT_BLACK); // Note: the new fonts do not draw the background colour
   ClearScreen(0, 160, 5);
 
+  tft.setTextColor(TFT_YELLOW, TFT_BLACK); // Note: the new fonts do not draw the background colour
   // connect to wifi
   tft.setCursor(0, 5);
   tft.println("[WiFi]Connecting to: ");
@@ -134,7 +134,7 @@ void setup()
 
   // setup complete
   tft.println("[System]Welcome!");
-  delay(3000);
+  delay(5000);
   ClearScreen(0, 160, 5);
 }
 
@@ -285,6 +285,10 @@ void ShowPlayerScreen()
       // update pervious state
       playerPlayingIndexPrevious = playerPlayingIndex;
     }
+    
+    // blink ":"
+    tft.setTextColor(0xFFFF, TFT_BLACK);
+    tft.drawChar(timeinfo.tm_sec % 2 == 0 ? ':' : ' ', 17, 5, 1);
 
     // update previous state
     secPrevious = timeinfo.tm_sec;
