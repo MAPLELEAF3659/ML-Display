@@ -143,34 +143,32 @@ void loop()
   // get time info
   getLocalTime(&timeinfo);
 
-  // try to get player info by api
-  apiResponse = HttpGETRequest(getPlayerInfoQuery);
-  if (apiResponse != "{}")
+  // update by sec
+  if (timeinfo.tm_sec != secPrevious)
   {
-    JSONVar jsonObj = JSON.parse(apiResponse);
-    isPlayerPlaying = JSON.stringify(jsonObj["player"]["playbackState"]) != "\"stopped\"";
-    if (isPlayerPlaying)
+    // try to get player info by api
+    apiResponse = HttpGETRequest(getPlayerInfoQuery);
+    if (apiResponse != "{}")
     {
-      playerPlayingIndex = jsonObj["player"]["activeItem"]["index"];
-      artistName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][0]);
-      artistName = artistName.substring(1, artistName.length() - 1);
-      songName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][1]);
-      songName = songName.substring(1, songName.length() - 1);
-      albumName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][2]);
-      albumName = albumName.substring(1, albumName.length() - 1);
+      JSONVar jsonObj = JSON.parse(apiResponse);
+      isPlayerPlaying = JSON.stringify(jsonObj["player"]["playbackState"]) != "\"stopped\"";
+      if (isPlayerPlaying)
+      {
+        playerPlayingIndex = jsonObj["player"]["activeItem"]["index"];
+        artistName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][0]);
+        artistName = artistName.substring(1, artistName.length() - 1);
+        songName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][1]);
+        songName = songName.substring(1, songName.length() - 1);
+        albumName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][2]);
+        albumName = albumName.substring(1, albumName.length() - 1);
+      }
+      isPlayerApiAvailable = true;
     }
     else
     {
+      isPlayerApiAvailable = false;
       playerPlayingIndex = -1;
-      artistName = "";
-      songName = "";
-      albumName = "";
     }
-    isPlayerApiAvailable = true;
-  }
-  else
-  {
-    isPlayerApiAvailable = false;
   }
 
   // change screenState
@@ -199,8 +197,6 @@ void loop()
     break;
   case 1: // player
     ShowPlayerScreen();
-  default:
-    ClearScreen(0, 160, 5);
     break;
   }
 
@@ -391,15 +387,10 @@ int TextColorByHumidity(float humi)
 
 void TFTPrintPlayerInfo()
 {
-  tft.setTextColor(0xFFFF, TFT_BLACK);
-  if (isPlayerPlayingPrevious != isPlayerPlaying)
-  {
-    // clear screen
-    ClearScreen(85, 160, 5);
-  }
+  tft.setTextColor(isPlayerPlaying ? 0xFFFF : 0xF800, TFT_BLACK);
 
   // check if player current song was updated
-  if (playerPlayingIndex != playerPlayingIndexPrevious)
+  if (playerPlayingIndexPrevious != playerPlayingIndex)
   {
     // clear screen
     ClearScreen(85, 160, 5);
