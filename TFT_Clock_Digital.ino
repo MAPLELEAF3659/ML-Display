@@ -58,6 +58,8 @@ byte ypos = 10;
 DHTesp dht;
 // Pin number for DHT11 data pin
 int dhtPin = 17; // VCC=5V
+// Update duration
+int dhtUpdateDuration = 5;
 void DHTTask(void *pvParameters);
 bool getTemperature();
 void TriggerGetDHT();
@@ -65,15 +67,15 @@ void TriggerGetDHT();
 TaskHandle_t dhtTaskHandle = NULL;
 // Ticker for temperature reading
 Ticker dhtTicker;
-// Comfort profile 
+// Comfort profile
 ComfortState cf;
 // Flag if task should run
 bool tasksEnabled = false;
 // DHT info
 float temperature = 0;
 float humidity = 0;
-float temperaturePrevious = 0;
-float humidityPrevious = 0;
+float temperaturePrevious = -1;
+float humidityPrevious = -1;
 //**DHT**
 
 //**Player API**
@@ -89,6 +91,9 @@ bool isPlayerAvailable = false;
 int playerPlayingIndex = 0;
 int playerPlayingIndexPrevious = 0;
 //**Player info**
+
+int screenState = 0; // 0 = main, 1 = player
+int screenStatePrevious = -1;
 
 void setup()
 {
@@ -127,12 +132,74 @@ void setup()
 
 void loop()
 {
+  // get time info
   getLocalTime(&timeinfo);
 
+  // try to get player info by api
+  apiResponse = HttpGETRequest(getPlayerInfoQuery);
+  if (apiResponse != "{}")
+  {
+    JSONVar jsonObj = JSON.parse(apiResponse);
+    isPlayerAvailable = JSON.stringify(jsonObj["player"]["playbackState"]) != "\"stopped\"";
+    if (isPlayerAvailable)
+    {
+      playerPlayingIndex = jsonObj["player"]["activeItem"]["index"];
+      artistName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][0]);
+      artistName = artistName.substring(1, artistName.length() - 1);
+      songName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][1]);
+      songName = songName.substring(1, songName.length() - 1);
+      albumName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][2]);
+      albumName = albumName.substring(1, albumName.length() - 1);
+    }
+    else
+    {
+      playerPlayingIndex = 0;
+    }
+  }
+  else
+  {
+    isPlayerAvailable = false;
+  }
+
+  // change screenState
+  if (isPlayerAvailable)
+  {
+    screenState = 1;
+  }
+  else
+  {
+    screenState = 0;
+  }
+
+  // force clear screen and previous states when screenState changed
+  if (screenStatePrevious != screenState)
+  {
+    ClearScreen(0, 160, 5);
+    dayPrevious = -1;
+    minPrevious = -1;
+    secPrevious = -1;
+  }
+
+  switch (screenState)
+  {
+  case 0: // main
+    ShowMainScreen();
+    break;
+  case 1: // player
+    ShowPlayerScreen();
+  default:
+    break;
+  }
+
+  screenStatePrevious = screenState;
+}
+
+void ShowMainScreen()
+{
   // update by day
   if (timeinfo.tm_mday != dayPrevious)
   {
-    tftPrintDate();
+    TFTPrintDate();
     dayPrevious = timeinfo.tm_mday;
   }
 
@@ -166,40 +233,28 @@ void loop()
     tft.setTextColor(0xFFFF);
     tft.drawChar(timeinfo.tm_sec % 2 == 0 ? ':' : ' ', 74, ypos, 7);
 
-    // try to get player info by api
-    apiResponse = HttpGETRequest(getPlayerInfoQuery);
-    if (apiResponse != "{}")
+    // print dht info
+    // force print when screenState changed
+    if (screenStatePrevious != screenState)
     {
-      JSONVar jsonObj = JSON.parse(apiResponse);
-      isPlayerAvailable = JSON.stringify(jsonObj["player"]["playbackState"]) != "\"stopped\"";
-      if (isPlayerAvailable)
-      {
-        playerPlayingIndex = jsonObj["player"]["activeItem"]["index"];
-        artistName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][0]);
-        artistName = artistName.substring(1, artistName.length() - 1);
-        songName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][1]);
-        songName = songName.substring(1, songName.length() - 1);
-        albumName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][2]);
-        albumName = albumName.substring(1, albumName.length() - 1);
-      }
-      else
-      {
-        playerPlayingIndex = 0;
-      }
+      // write temperature
+      tft.drawString("Temperature " + String(temperature < 10 ? "0" : ""), xpos + 10, ypos + 80, 2);
+      // write humidity
+      tft.drawString("Humidity     " + String(humidity < 10 ? "0" : ""), xpos + 10, ypos + 100, 2);
     }
-
-    // print bottom info
-    if (isPlayerAvailable)
-      tftPrintPlayerInfo();
-    else
-      tftPrintDHTInfo();
+    TFTPrintDHTInfo();
 
     // update previous state
     secPrevious = timeinfo.tm_sec;
   }
 }
 
-void tftPrintDate()
+void ShowPlayerScreen()
+{
+  TFTPrintPlayerInfo();
+}
+
+void TFTPrintDate()
 {
   tft.setTextColor(0xFFFF, TFT_BLACK);
   String dayOfWeekStr;
@@ -233,43 +288,37 @@ void tftPrintDate()
                  0, ypos + 58, 2);
 }
 
-void tftPrintDHTInfo()
+void TFTPrintDHTInfo()
 {
   tft.setTextColor(0xFFFF, TFT_BLACK);
 
-  if (playerPlayingIndex == 0 && playerPlayingIndex != playerPlayingIndexPrevious)
+  // force print when screenState changed
+  if (screenStatePrevious != screenState)
   {
-    // clear screen
-    ClearScreen(85, 160, 5);
     // write temperature
-    tft.drawString("Temperature " + String(temperature < 10 ? "0" : "") + String(temperature, 1) + "C", xpos + 10, ypos + 80, 2);
+    tft.drawString(String(temperature, 1) + "C", xpos + 95, ypos + 80, 2);
     // write humidity
-    tft.drawString("Humidity     " + String(humidity < 10 ? "0" : "") + String(humidity, 1) + "%", xpos + 10, ypos + 100, 2);
-    playerPlayingIndexPrevious = playerPlayingIndex;
+    tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
   }
 
   // check if temperature or humidity was updated
   if (temperature != temperaturePrevious)
   {
-    // clear screen
-    ClearScreen(85, 100, 5);
     // write temperature
-    tft.drawString("Temperature " + String(temperature < 10 ? "0" : "") + String(temperature, 1) + "C", xpos + 10, ypos + 80, 2);
+    tft.drawString(String(temperature, 1) + "C", xpos + 95, ypos + 80, 2);
     // update pervious state
     temperaturePrevious = temperature;
   }
   if (humidity != humidityPrevious)
   {
-    // clear screen
-    ClearScreen(105, 160, 5);
     // write humidity
-    tft.drawString("Humidity     " + String(humidity < 10 ? "0" : "") + String(humidity, 1) + "%", xpos + 10, ypos + 100, 2);
+    tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
     // update pervious state
     humidityPrevious = humidity;
   }
 }
 
-void tftPrintPlayerInfo()
+void TFTPrintPlayerInfo()
 {
   tft.setTextColor(0xFFFF, TFT_BLACK);
 
@@ -346,11 +395,11 @@ bool initTemp()
   xTaskCreatePinnedToCore(
       DHTTask,        /* Function to implement the task */
       "DHTTask ",     /* Name of the task */
-      4000,            /* Stack size in words */
-      NULL,            /* Task input parameter */
-      5,               /* Priority of the task */
+      4000,           /* Stack size in words */
+      NULL,           /* Task input parameter */
+      5,              /* Priority of the task */
       &dhtTaskHandle, /* Task handle. */
-      1);              /* Core where the task should run */
+      1);             /* Core where the task should run */
 
   if (dhtTaskHandle == NULL)
   {
@@ -360,7 +409,7 @@ bool initTemp()
   else
   {
     // Start update of environment data every XX seconds
-    dhtTicker.attach(60, TriggerGetDHT);
+    dhtTicker.attach(dhtUpdateDuration, TriggerGetDHT);
   }
   getTemperature();
   return true;
