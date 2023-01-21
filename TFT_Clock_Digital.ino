@@ -188,6 +188,29 @@ void loop()
     dayPrevious = -1;
     minPrevious = -1;
     secPrevious = -1;
+
+    switch (screenState)
+    {
+    case 0: // main
+      tft.setTextColor(0xFFFF, TFT_BLACK);
+      // write temperature title
+      tft.drawString("Temperature " + String(temperature < 10 ? "0" : ""), xpos + 10, ypos + 80, 2);
+      // write humidity title
+      tft.drawString("Humidity     " + String(humidity < 10 ? "0" : ""), xpos + 10, ypos + 100, 2);
+
+      // write temperature
+      tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
+      tft.drawString(String(temperature, 1) + "C", xpos + 95, ypos + 80, 2);
+      // write humidity
+      tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
+      tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
+      break;
+    case 1: // player
+      TFTPrintPlayerInfo();
+      break;
+    }
+
+    screenStatePrevious = screenState;
   }
 
   switch (screenState)
@@ -199,8 +222,6 @@ void loop()
     ShowPlayerScreen();
     break;
   }
-
-  screenStatePrevious = screenState;
 }
 
 void ShowMainScreen()
@@ -257,7 +278,14 @@ void ShowPlayerScreen()
   // update by sec
   if (timeinfo.tm_sec != secPrevious)
   {
-    TFTPrintPlayerInfo();
+    // check if player current song was updated
+    if (playerPlayingIndexPrevious != playerPlayingIndex)
+    {
+      TFTPrintPlayerInfo();
+      // update pervious state
+      playerPlayingIndexPrevious = playerPlayingIndex;
+    }
+
     // update previous state
     secPrevious = timeinfo.tm_sec;
   }
@@ -336,23 +364,6 @@ void TFTPrintDate()
 
 void TFTPrintDHTInfo()
 {
-  // force print when screenState changed
-  if (screenStatePrevious != screenState)
-  {
-    tft.setTextColor(0xFFFF, TFT_BLACK);
-    // write temperature title
-    tft.drawString("Temperature " + String(temperature < 10 ? "0" : ""), xpos + 10, ypos + 80, 2);
-    // write humidity title
-    tft.drawString("Humidity     " + String(humidity < 10 ? "0" : ""), xpos + 10, ypos + 100, 2);
-
-    // write temperature
-    tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
-    tft.drawString(String(temperature, 1) + "C", xpos + 95, ypos + 80, 2);
-    // write humidity
-    tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
-    tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
-  }
-
   // check if temperature or humidity was updated
   if (temperature != temperaturePrevious)
   {
@@ -426,38 +437,31 @@ int TextColorByHumidity(float humi)
 
 void TFTPrintPlayerInfo()
 {
+  // clear screen
+  ClearScreen(80, 160, 5);
+
   tft.setTextColor(isPlayerPlaying ? 0xFFFF : 0xF800, TFT_BLACK);
 
-  // check if player current song was updated
-  if (playerPlayingIndexPrevious != playerPlayingIndex)
-  {
-    // clear screen
-    ClearScreen(80, 160, 5);
+  // load han character
+  tft.loadFont(Silver_16);
 
-    // load han character
-    tft.loadFont(Silver_16);
+  // print artist name
+  char artistNameArr[artistName.length()];
+  artistName.toCharArray(artistNameArr, artistName.length());
+  tft.drawString((utf8len(artistNameArr) > 20 ? artistName.substring(0, artistName.indexOf(utf8index(artistNameArr, 17))) + "..." : artistName), xpos, ypos + 80);
 
-    // print artist name
-    char artistNameArr[artistName.length()];
-    artistName.toCharArray(artistNameArr, artistName.length());
-    tft.drawString((utf8len(artistNameArr) > 20 ? artistName.substring(0, artistName.indexOf(utf8index(artistNameArr, 17))) + "..." : artistName), xpos, ypos + 80);
+  // print album name
+  char albumNameArr[albumName.length()];
+  albumName.toCharArray(albumNameArr, albumName.length());
+  tft.drawString((utf8len(albumNameArr) > 20 ? albumName.substring(0, albumName.indexOf(utf8index(albumNameArr, 17))) + "..." : albumName), xpos, ypos + 95);
 
-    // print album name
-    char albumNameArr[albumName.length()];
-    albumName.toCharArray(albumNameArr, albumName.length());
-    tft.drawString((utf8len(albumNameArr) > 20 ? albumName.substring(0, albumName.indexOf(utf8index(albumNameArr, 17))) + "..." : albumName), xpos, ypos + 95);
+  // print song name
+  char songNameArr[songName.length()];
+  songName.toCharArray(songNameArr, songName.length());
+  tft.drawString((utf8len(songNameArr) > 20 ? songName.substring(0, songName.indexOf(utf8index(songNameArr, 17))) + "..." : songName), xpos, ypos + 110);
 
-    // print song name
-    char songNameArr[songName.length()];
-    songName.toCharArray(songNameArr, songName.length());
-    tft.drawString((utf8len(songNameArr) > 20 ? songName.substring(0, songName.indexOf(utf8index(songNameArr, 17))) + "..." : songName), xpos, ypos + 110);
-
-    // unload han character
-    tft.unloadFont();
-
-    // update pervious state
-    playerPlayingIndexPrevious = playerPlayingIndex;
-  }
+  // unload han character
+  tft.unloadFont();
 }
 
 size_t utf8len(char *s)
@@ -616,7 +620,7 @@ String HttpGETRequest(const char *requestAddress)
 
 void ClearScreen(int startPoint, int endPoint, int perUnit)
 {
-  // tft.setTextSize(20);
+  tft.setTextColor(0xFFFF, TFT_BLACK);
   for (int i = startPoint; i <= endPoint; i += perUnit)
   {
     tft.setCursor(0, i);
