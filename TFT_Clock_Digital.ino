@@ -215,20 +215,7 @@ void ShowMainScreen()
   // update by min
   if (timeinfo.tm_min != minPrevious)
   {
-    int xposTime = xpos;
-    int yposTime = ypos;
-    // print time
-    tft.setTextColor(0x39C4, TFT_BLACK);
-    tft.drawString("88 88", xposTime, yposTime, 7);
-    tft.setTextColor(0xFFFF);
-    if (timeinfo.tm_hour < 10)
-      xposTime += tft.drawChar('0', xposTime, yposTime, 7);
-    xposTime += tft.drawNumber(timeinfo.tm_hour, xposTime, yposTime, 7);
-    xposTime += tft.drawChar(' ', xposTime, yposTime, 7);
-    if (timeinfo.tm_min < 10)
-      xposTime += tft.drawChar('0', xposTime, yposTime, 7);
-    xposTime += tft.drawNumber(timeinfo.tm_min, xposTime, yposTime, 7);
-
+    TFTPrintTime();
     // update previous state
     minPrevious = timeinfo.tm_min;
   }
@@ -252,12 +239,54 @@ void ShowMainScreen()
 
 void ShowPlayerScreen()
 {
+  // update by day
+  if (timeinfo.tm_mday != dayPrevious)
+  {
+    TFTPrintDate();
+    dayPrevious = timeinfo.tm_mday;
+  }
+
+  // update by min
+  if (timeinfo.tm_min != minPrevious)
+  {
+    TFTPrintTime();
+    // update previous state
+    minPrevious = timeinfo.tm_min;
+  }
+
   // update by sec
   if (timeinfo.tm_sec != secPrevious)
   {
     TFTPrintPlayerInfo();
     // update previous state
     secPrevious = timeinfo.tm_sec;
+  }
+}
+
+void TFTPrintTime()
+{
+  int xposTime = xpos;
+  int yposTime = ypos;
+  if (screenState == 0)
+  {
+    // print time
+    tft.setTextColor(0x39C4, TFT_BLACK);
+    tft.drawString("88 88", xposTime, yposTime, 7);
+    tft.setTextColor(0xFFFF);
+    if (timeinfo.tm_hour < 10)
+      xposTime += tft.drawChar('0', xposTime, yposTime, 7);
+    xposTime += tft.drawNumber(timeinfo.tm_hour, xposTime, yposTime, 7);
+    xposTime += tft.drawChar(' ', xposTime, yposTime, 7);
+    if (timeinfo.tm_min < 10)
+      xposTime += tft.drawChar('0', xposTime, yposTime, 7);
+    xposTime += tft.drawNumber(timeinfo.tm_min, xposTime, yposTime, 7);
+  }
+  else
+  {
+    tft.setTextColor(0xFFFF, TFT_BLACK);
+    tft.drawString((timeinfo.tm_hour < 10 ? "0" : "") + String(timeinfo.tm_hour) + " " +
+                       (timeinfo.tm_min < 10 ? "0" : "") + String(timeinfo.tm_min),
+                   1, 0, 2);
   }
 }
 
@@ -289,10 +318,20 @@ void TFTPrintDate()
     dayOfWeekStr = "SAT.";
     break;
   }
-  tft.drawString("    " + String(timeinfo.tm_year + 1900) + "/" +
-                     (timeinfo.tm_mon < 9 ? "0" : "") + String(timeinfo.tm_mon + 1) + "/" +
-                     (timeinfo.tm_mday < 10 ? "0" : "") + String(timeinfo.tm_mday) + " " + dayOfWeekStr + "  ",
-                 0, ypos + 58, 2);
+  if (screenState == 0)
+  {
+    tft.drawString("    " + String(timeinfo.tm_year + 1900) + "/" +
+                       (timeinfo.tm_mon < 9 ? "0" : "") + String(timeinfo.tm_mon + 1) + "/" +
+                       (timeinfo.tm_mday < 10 ? "0" : "") + String(timeinfo.tm_mday) + " " + dayOfWeekStr + "  ",
+                   0, ypos + 58, 2);
+  }
+  else
+  {
+    tft.drawString(String(timeinfo.tm_year + 1900) + "/" +
+                       (timeinfo.tm_mon < 9 ? "0" : "") + String(timeinfo.tm_mon + 1) + "/" +
+                       (timeinfo.tm_mday < 10 ? "0" : "") + String(timeinfo.tm_mday) + " " + dayOfWeekStr,
+                   49, 0, 2);
+  }
 }
 
 void TFTPrintDHTInfo()
@@ -393,7 +432,7 @@ void TFTPrintPlayerInfo()
   if (playerPlayingIndexPrevious != playerPlayingIndex)
   {
     // clear screen
-    ClearScreen(85, 160, 5);
+    ClearScreen(80, 160, 5);
 
     // load han character
     tft.loadFont(Silver_16);
