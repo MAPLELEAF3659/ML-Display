@@ -81,15 +81,17 @@ float humidityPrevious = -1;
 //**Player API**
 const char *getPlayerInfoQuery = "http://192.168.0.100:8880/api/query?player=true&trcolumns=%25artist%25,%25title%25,%25album%25";
 String apiResponse = "";
+bool isPlayerApiAvailable = false;
 //**Player API**
 
 //**Player info**
 String artistName = "";
 String songName = "";
 String albumName = "";
-bool isPlayerAvailable = false;
-int playerPlayingIndex = 0;
-int playerPlayingIndexPrevious = 0;
+bool isPlayerPlaying = false;
+bool isPlayerPlayingPrevious = false;
+int playerPlayingIndex = -1;
+int playerPlayingIndexPrevious = -1;
 //**Player info**
 
 int screenState = 0; // 0 = main, 1 = player
@@ -97,7 +99,7 @@ int screenStatePrevious = -1;
 
 void setup()
 {
-  Serial.begin(921600);
+  Serial.begin(115200);
 
   tft.init();
   tft.setRotation(-1);
@@ -106,25 +108,31 @@ void setup()
   tft.setTextColor(TFT_YELLOW, TFT_BLACK); // Note: the new fonts do not draw the background colour
   ClearScreen(0, 160, 5);
 
-  tft.setCursor(5, 5);
-  tft.print("[WiFi]Connecting to: ");
-  tft.println(ssid);
+  // connect to wifi
+  tft.setCursor(0, 5);
+  tft.println("[WiFi]Connecting to: ");
+  tft.print("[WiFi]" + String(ssid));
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED)
   {
     delay(500);
     tft.print(".");
   }
-  tft.println("Connected!");
+  tft.println();
+  tft.println("[WiFi]Connected!");
 
+  // setup ntp server
   tft.println("[NTP server]Setting up...");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   tft.println("[NTP server]Done.");
 
+  // setup dht11
   tft.println("[DHT11]Setting up...");
   initTemp();
   tasksEnabled = true;
+  tft.println("[DHT11]Done.");
 
+  // setup complete
   tft.println("[System]Welcome!");
   delay(3000);
   ClearScreen(0, 160, 5);
@@ -140,8 +148,8 @@ void loop()
   if (apiResponse != "{}")
   {
     JSONVar jsonObj = JSON.parse(apiResponse);
-    isPlayerAvailable = JSON.stringify(jsonObj["player"]["playbackState"]) != "\"stopped\"";
-    if (isPlayerAvailable)
+    isPlayerPlaying = JSON.stringify(jsonObj["player"]["playbackState"]) != "\"stopped\"";
+    if (isPlayerPlaying)
     {
       playerPlayingIndex = jsonObj["player"]["activeItem"]["index"];
       artistName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][0]);
@@ -153,16 +161,20 @@ void loop()
     }
     else
     {
-      playerPlayingIndex = 0;
+      playerPlayingIndex = -1;
+      artistName = "";
+      songName = "";
+      albumName = "";
     }
+    isPlayerApiAvailable = true;
   }
   else
   {
-    isPlayerAvailable = false;
+    isPlayerApiAvailable = false;
   }
 
   // change screenState
-  if (isPlayerAvailable)
+  if (isPlayerApiAvailable)
   {
     screenState = 1;
   }
@@ -188,6 +200,7 @@ void loop()
   case 1: // player
     ShowPlayerScreen();
   default:
+    ClearScreen(0, 160, 5);
     break;
   }
 
@@ -243,7 +256,13 @@ void ShowMainScreen()
 
 void ShowPlayerScreen()
 {
-  TFTPrintPlayerInfo();
+  // update by sec
+  if (timeinfo.tm_sec != secPrevious)
+  {
+    TFTPrintPlayerInfo();
+    // update previous state
+    secPrevious = timeinfo.tm_sec;
+  }
 }
 
 void TFTPrintDate()
@@ -373,6 +392,11 @@ int TextColorByHumidity(float humi)
 void TFTPrintPlayerInfo()
 {
   tft.setTextColor(0xFFFF, TFT_BLACK);
+  if (isPlayerPlayingPrevious != isPlayerPlaying)
+  {
+    // clear screen
+    ClearScreen(85, 160, 5);
+  }
 
   // check if player current song was updated
   if (playerPlayingIndex != playerPlayingIndexPrevious)
