@@ -85,9 +85,6 @@ bool isPlayerApiAvailable = false;
 //**Player API**
 
 //**Player info**
-String artistName = "";
-String songName = "";
-String albumName = "";
 enum PlayerState
 {
   Playing,
@@ -96,6 +93,11 @@ enum PlayerState
 };
 PlayerState playerState = Stopped;
 PlayerState playerStatePrevious = Stopped;
+String artistName = "";
+String songName = "";
+String albumName = "";
+int songDuration = 0;
+int playingPostion = 0;
 int playerPlayingIndex = -1;
 int playerPlayingIndexPrevious = -1;
 //**Player info**
@@ -150,7 +152,7 @@ void loop()
   getLocalTime(&timeinfo);
 
   // update by sec
-  if (timeinfo.tm_sec != secPrevious)
+  if (timeinfo.tm_sec % 3)
   {
     // try to get player info by api
     apiResponse = HttpGETRequest(getPlayerInfoQuery);
@@ -180,6 +182,10 @@ void loop()
         songName = songName.substring(1, songName.length() - 1);
         albumName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][2]);
         albumName = albumName.substring(1, albumName.length() - 1);
+        String songDurationStr = JSON.stringify(jsonObj["player"]["activeItem"]["duration"]);
+        songDuration = int(round(songDurationStr.toFloat()));
+        String playingPostionStr = JSON.stringify(jsonObj["player"]["activeItem"]["position"]);
+        playingPostion = int(round(playingPostionStr.toFloat()));
       }
       isPlayerApiAvailable = true;
     }
@@ -303,6 +309,15 @@ void ShowPlayerScreen()
       TFTPrintPlayerState();
       playerStatePrevious = playerState;
     }
+
+    tft.setTextColor(0xFFFF, TFT_BLACK);
+    tft.drawString(
+        ((playingPostion / 60) < 10 ? "0" : "") + String(playingPostion / 60) + ":" +
+            ((playingPostion % 60) < 10 ? "0" : "") + String(playingPostion % 60) +
+            "/" +
+            ((songDuration / 60 < 10) ? "0" : "") + String(songDuration / 60) + ":" +
+            ((songDuration % 60 < 10) ? "0" : "") + String(songDuration % 60),
+        75, 20, 2);
 
     // check if player current song was updated
     if (playerPlayingIndexPrevious != playerPlayingIndex)
@@ -655,14 +670,14 @@ String HttpGETRequest(const char *requestAddress)
 
   if (httpResponseCode > 0)
   {
-    Serial.print("HTTP Response code: ");
-    Serial.println(httpResponseCode);
+    //Serial.print("HTTP Response code: ");
+    //Serial.println(httpResponseCode);
     payload = http.getString();
   }
   else
   {
-    Serial.print("Error code: ");
-    Serial.println(httpResponseCode);
+    //Serial.print("Error code: ");
+    //Serial.println(httpResponseCode);
   }
   // Free resources
   http.end();
