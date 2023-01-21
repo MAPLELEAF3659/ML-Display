@@ -234,14 +234,6 @@ void ShowMainScreen()
     tft.drawChar(timeinfo.tm_sec % 2 == 0 ? ':' : ' ', 74, ypos, 7);
 
     // print dht info
-    // force print when screenState changed
-    if (screenStatePrevious != screenState)
-    {
-      // write temperature
-      tft.drawString("Temperature " + String(temperature < 10 ? "0" : ""), xpos + 10, ypos + 80, 2);
-      // write humidity
-      tft.drawString("Humidity     " + String(humidity < 10 ? "0" : ""), xpos + 10, ypos + 100, 2);
-    }
     TFTPrintDHTInfo();
 
     // update previous state
@@ -290,20 +282,27 @@ void TFTPrintDate()
 
 void TFTPrintDHTInfo()
 {
-  tft.setTextColor(0xFFFF, TFT_BLACK);
-
   // force print when screenState changed
   if (screenStatePrevious != screenState)
   {
+    tft.setTextColor(0xFFFF, TFT_BLACK);
+    // write temperature title
+    tft.drawString("Temperature " + String(temperature < 10 ? "0" : ""), xpos + 10, ypos + 80, 2);
+    // write humidity title
+    tft.drawString("Humidity     " + String(humidity < 10 ? "0" : ""), xpos + 10, ypos + 100, 2);
+
     // write temperature
+    tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
     tft.drawString(String(temperature, 1) + "C", xpos + 95, ypos + 80, 2);
     // write humidity
+    tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
     tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
   }
 
   // check if temperature or humidity was updated
   if (temperature != temperaturePrevious)
   {
+    tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
     // write temperature
     tft.drawString(String(temperature, 1) + "C", xpos + 95, ypos + 80, 2);
     // update pervious state
@@ -311,10 +310,63 @@ void TFTPrintDHTInfo()
   }
   if (humidity != humidityPrevious)
   {
+    tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
     // write humidity
     tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
     // update pervious state
     humidityPrevious = humidity;
+  }
+}
+
+int TextColorByTemperature(float temp)
+{
+  if (temp >= 31)
+  {
+    return 0xF800; // red
+  }
+  else if (temp < 31 && temp >= 27)
+  {
+    return 0xFC00; // orange
+  }
+  else if (temp < 27 && temp >= 24)
+  {
+    return 0xFFE0; // yellow
+  }
+  else if (temp < 24 && temp >= 20)
+  {
+    return 0x07E0; // green
+  }
+  else if (temp < 20 && temp >= 16)
+  {
+    return 0x07F0; // blue green
+  }
+  else if (temp < 16 && temp >= 12)
+  {
+    return 0x001F; // blue
+  }
+  else if (temp < 12)
+  {
+    return 0x07FF; // light blue
+  }
+}
+
+int TextColorByHumidity(float humi)
+{
+  if (humi >= 75)
+  {
+    return 0xF800; // red
+  }
+  else if (humi < 75 && humi >= 50)
+  {
+    return 0xFC00; // orange
+  }
+  else if (humi < 50 && humi >= 25)
+  {
+    return 0x07E0; // green
+  }
+  else if (humi < 25)
+  {
+    return 0x001F; // blue
   }
 }
 
