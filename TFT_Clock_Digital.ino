@@ -517,17 +517,17 @@ void TFTPrintPlayerSongMetadata()
   // print artist name
   char artistNameArr[artistName.length()];
   artistName.toCharArray(artistNameArr, artistName.length());
-  tft.drawString((utf8len(artistNameArr) > 20 ? artistName.substring(0, artistName.indexOf(utf8index(artistNameArr, 17))) + "..." : artistName), xpos, ypos + 80);
+  tft.drawString((utf8len(artistNameArr) > 20 ? artistName.substring(0, artistName.indexOf(utf8index(artistNameArr, 17))) + "..." : artistName), xpos, ypos + 75);
 
   // print album name
   char albumNameArr[albumName.length()];
   albumName.toCharArray(albumNameArr, albumName.length());
-  tft.drawString((utf8len(albumNameArr) > 20 ? albumName.substring(0, albumName.indexOf(utf8index(albumNameArr, 17))) + "..." : albumName), xpos, ypos + 95);
+  tft.drawString((utf8len(albumNameArr) > 20 ? albumName.substring(0, albumName.indexOf(utf8index(albumNameArr, 17))) + "..." : albumName), xpos, ypos + 90);
 
   // print song name
   char songNameArr[songName.length()];
   songName.toCharArray(songNameArr, songName.length());
-  tft.drawString((utf8len(songNameArr) > 20 ? songName.substring(0, songName.indexOf(utf8index(songNameArr, 17))) + "..." : songName), xpos, ypos + 110);
+  tft.drawString((utf8len(songNameArr) > 20 ? songName.substring(0, songName.indexOf(utf8index(songNameArr, 17))) + "..." : songName), xpos, ypos + 105);
 
   // unload han character
   tft.unloadFont();
