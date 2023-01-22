@@ -559,18 +559,24 @@ void TFTPrintPlayerSongGeneralInfo()
 {
   // clear player state screen area
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString("                             ", xpos, 40, 2);
-  tft.drawString("                             ", xpos, 60, 2);
+  tft.drawString("                             ", 0, 40, 1);
 
-  tft.drawString(bitsPerSample == "?" ? "16" : bitsPerSample, xpos, 40, 2);
-  tft.drawString("bits", xpos + 40, 40, 2);
-  tft.drawString("|", xpos + 70, 40, 2);
-  tft.drawString(sampleRate + " Hz", xpos + 80, 40, 2);
+  // tft.setTextColor(0xFFFF, 0x2104);
+  float sampleRateF = sampleRate.toFloat() / 1000;
+  tft.drawString((bitsPerSample == "?" ? "16" : bitsPerSample) + "bits " +
+                     String(sampleRateF, 1) + "kHz " +
+                     bitrate + "kbps",
+                 xpos, 40, 1);
 
-  tft.drawString(bitrate, xpos, 60, 2);
-  tft.drawString("kbps", xpos + 40, 60, 2);
-  tft.drawString("|", xpos + 70, 60, 2);
-  tft.drawString(codec, xpos + 80, 60, 2);
+  // tft.drawString(bitsPerSample == "?" ? "16" : bitsPerSample, xpos, 40, 2);
+  // tft.drawString("bits", xpos + 40, 40, 2);
+  // tft.drawString("|", xpos + 70, 40, 2);
+  // tft.drawString(sampleRate + " Hz", xpos + 80, 40, 2);
+
+  // tft.drawString(bitrate, xpos, 60, 2);
+  // tft.drawString("kbps", xpos + 40, 60, 2);
+  // tft.drawString("|", xpos + 70, 60, 2);
+  // tft.drawString(codec, xpos + 80, 60, 2);
 }
 
 size_t utf8len(char *s)
