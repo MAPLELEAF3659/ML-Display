@@ -34,6 +34,7 @@ TFT_eSPI tft = TFT_eSPI(); // Invoke library, pins defined in User_Setup.h
 // GND=GND VCC=3V3 SCL=G14 SDA=G15 RES=G33 DC=G27 CS=G5 BL，=G22
 byte xpos = 10;
 byte ypos = 10;
+uint upperBarBackgroundColor = 0x2104;
 /*
   A few colour codes:
 
@@ -83,6 +84,7 @@ const char *getPlayerInfoQuery =
     "http://192.168.0.100:8880/api/query?player=true&trcolumns=%artist%,%title%,%album%,%__bitspersample%,%bitrate%,%samplerate%,%codec%";
 String apiResponse = "";
 bool isPlayerApiAvailable = false;
+int apiErrorCount = 0;
 //**Player API**
 
 //**Player info**
@@ -209,12 +211,21 @@ void loop()
         codec = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][6]);
         codec = codec.substring(1, codec.length() - 1);
       }
+      apiErrorCount = 0;
       isPlayerApiAvailable = true;
     }
     else
     {
-      isPlayerApiAvailable = false;
-      playerPlayingIndex = -1;
+      if (apiErrorCount < 3)
+      {
+        apiErrorCount++;
+        return;
+      }
+      else
+      {
+        isPlayerApiAvailable = false;
+        playerPlayingIndex = -1;
+      }
     }
   }
 
@@ -239,12 +250,12 @@ void loop()
     switch (screenState)
     {
     case 0: // main
+      // **force print dht info
       tft.setTextColor(0xFFFF, TFT_BLACK);
       // write temperature title
       tft.drawString("Temperature " + String(temperature < 10 ? "0" : ""), xpos + 10, ypos + 80, 2);
       // write humidity title
       tft.drawString("Humidity     " + String(humidity < 10 ? "0" : ""), xpos + 10, ypos + 100, 2);
-
       // write temperature
       tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
       tft.drawString(String(temperature, 1) + "C", xpos + 95, ypos + 80, 2);
@@ -253,6 +264,11 @@ void loop()
       tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
       break;
     case 1: // player
+      // draw upper bar(time&date) background
+      tft.setTextColor(0xFFFF, upperBarBackgroundColor);
+      tft.drawString("                   ", 0, 0, 2);
+
+      // force print player infos
       TFTPrintPlayerState();
       TFTPrintPlayerSongMetadata();
       TFTPrintPlayerSongGeneralInfo();
@@ -352,7 +368,7 @@ void ShowPlayerScreen()
     }
 
     // blink ":"
-    tft.setTextColor(0xFFFF, TFT_BLACK);
+    tft.setTextColor(0xFFFF, upperBarBackgroundColor);
     tft.drawChar(timeinfo.tm_sec % 2 == 0 ? ':' : ' ', 17, 5, 1);
 
     // update previous state
@@ -380,7 +396,7 @@ void TFTPrintTime()
   }
   else
   {
-    tft.setTextColor(0xFFFF, TFT_BLACK);
+    tft.setTextColor(0xFFFF, upperBarBackgroundColor);
     tft.drawString((timeinfo.tm_hour < 10 ? "0" : "") + String(timeinfo.tm_hour) + " " +
                        (timeinfo.tm_min < 10 ? "0" : "") + String(timeinfo.tm_min),
                    1, 0, 2);
@@ -389,34 +405,34 @@ void TFTPrintTime()
 
 void TFTPrintDate()
 {
-  tft.setTextColor(0xFFFF, TFT_BLACK);
-  String dayOfWeekStr;
-  switch (timeinfo.tm_wday)
-  {
-  case 0:
-    dayOfWeekStr = "SUN.";
-    break;
-  case 1:
-    dayOfWeekStr = "MON.";
-    break;
-  case 2:
-    dayOfWeekStr = "TUE.";
-    break;
-  case 3:
-    dayOfWeekStr = "WED.";
-    break;
-  case 4:
-    dayOfWeekStr = "THU.";
-    break;
-  case 5:
-    dayOfWeekStr = "FRI.";
-    break;
-  case 6:
-    dayOfWeekStr = "SAT.";
-    break;
-  }
   if (screenState == 0)
   {
+    tft.setTextColor(0xFFFF, TFT_BLACK);
+    String dayOfWeekStr;
+    switch (timeinfo.tm_wday)
+    {
+    case 0:
+      dayOfWeekStr = "SUN.";
+      break;
+    case 1:
+      dayOfWeekStr = "MON.";
+      break;
+    case 2:
+      dayOfWeekStr = "TUE.";
+      break;
+    case 3:
+      dayOfWeekStr = "WED.";
+      break;
+    case 4:
+      dayOfWeekStr = "THU.";
+      break;
+    case 5:
+      dayOfWeekStr = "FRI.";
+      break;
+    case 6:
+      dayOfWeekStr = "SAT.";
+      break;
+    }
     tft.drawString("    " + String(timeinfo.tm_year + 1900) + "/" +
                        (timeinfo.tm_mon < 9 ? "0" : "") + String(timeinfo.tm_mon + 1) + "/" +
                        (timeinfo.tm_mday < 10 ? "0" : "") + String(timeinfo.tm_mday) + " " + dayOfWeekStr + "  ",
@@ -424,10 +440,11 @@ void TFTPrintDate()
   }
   else
   {
+    tft.setTextColor(0xFFFF, upperBarBackgroundColor);
     tft.drawString(String(timeinfo.tm_year + 1900) + "/" +
                        (timeinfo.tm_mon < 9 ? "0" : "") + String(timeinfo.tm_mon + 1) + "/" +
-                       (timeinfo.tm_mday < 10 ? "0" : "") + String(timeinfo.tm_mday) + " " + dayOfWeekStr,
-                   49, 0, 2);
+                       (timeinfo.tm_mday < 10 ? "0" : "") + String(timeinfo.tm_mday),
+                   83, 0, 2);
   }
 }
 
@@ -559,14 +576,13 @@ void TFTPrintPlayerSongGeneralInfo()
 {
   // clear player state screen area
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString("                             ", 0, 40, 1);
+  tft.drawString("                             ", 0, 45, 1);
 
-  // tft.setTextColor(0xFFFF, 0x2104);
   float sampleRateF = sampleRate.toFloat() / 1000;
   tft.drawString((bitsPerSample == "?" ? "16" : bitsPerSample) + "bits " +
                      String(sampleRateF, 1) + "kHz " +
                      bitrate + "kbps",
-                 xpos, 40, 1);
+                 xpos, 45, 1);
 
   // tft.drawString(bitsPerSample == "?" ? "16" : bitsPerSample, xpos, 40, 2);
   // tft.drawString("bits", xpos + 40, 40, 2);
