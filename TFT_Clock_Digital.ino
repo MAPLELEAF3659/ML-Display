@@ -79,7 +79,8 @@ float humidityPrevious = -1;
 //**DHT**
 
 //**Player API**
-const char *getPlayerInfoQuery = "http://192.168.0.100:8880/api/query?player=true&trcolumns=%25artist%25,%25title%25,%25album%25";
+const char *getPlayerInfoQuery =
+    "http://192.168.0.100:8880/api/query?player=true&trcolumns=%artist%,%title%,%album%,%__bitspersample%,%bitrate%,%samplerate%,%codec%";
 String apiResponse = "";
 bool isPlayerApiAvailable = false;
 //**Player API**
@@ -100,6 +101,10 @@ int songDuration = 0;
 int playingPostion = 0;
 int playerPlayingIndex = -1;
 int playerPlayingIndexPrevious = -1;
+String bitsPerSample = "0";
+String bitrate = "0";
+String sampleRate = "0";
+String codec = "";
 //**Player info**
 
 int screenState = 0; // 0 = main, 1 = player
@@ -176,16 +181,33 @@ void loop()
       if (playerState == Playing)
       {
         playerPlayingIndex = jsonObj["player"]["activeItem"]["index"];
+
         artistName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][0]);
         artistName = artistName.substring(1, artistName.length() - 1);
+
         songName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][1]);
         songName = songName.substring(1, songName.length() - 1);
+
         albumName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][2]);
         albumName = albumName.substring(1, albumName.length() - 1);
+
         String songDurationStr = JSON.stringify(jsonObj["player"]["activeItem"]["duration"]);
         songDuration = int(round(songDurationStr.toFloat()));
+
         String playingPostionStr = JSON.stringify(jsonObj["player"]["activeItem"]["position"]);
         playingPostion = int(round(playingPostionStr.toFloat()));
+
+        bitsPerSample = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][3]);
+        bitsPerSample = bitsPerSample.substring(1, bitsPerSample.length() - 1);
+
+        bitrate = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][4]);
+        bitrate = bitrate.substring(1, bitrate.length() - 1);
+
+        sampleRate = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][5]);
+        sampleRate = sampleRate.substring(1, sampleRate.length() - 1);
+
+        codec = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][6]);
+        codec = codec.substring(1, codec.length() - 1);
       }
       isPlayerApiAvailable = true;
     }
@@ -232,7 +254,8 @@ void loop()
       break;
     case 1: // player
       TFTPrintPlayerState();
-      TFTPrintPlayerMusicInfo();
+      TFTPrintPlayerSongMetadata();
+      TFTPrintPlayerSongGeneralInfo();
       break;
     }
 
@@ -322,7 +345,8 @@ void ShowPlayerScreen()
     // check if player current song was updated
     if (playerPlayingIndexPrevious != playerPlayingIndex)
     {
-      TFTPrintPlayerMusicInfo();
+      TFTPrintPlayerSongMetadata();
+      TFTPrintPlayerSongGeneralInfo();
       // update pervious state
       playerPlayingIndexPrevious = playerPlayingIndex;
     }
@@ -480,7 +504,7 @@ int TextColorByHumidity(float humi)
   }
 }
 
-void TFTPrintPlayerMusicInfo()
+void TFTPrintPlayerSongMetadata()
 {
   // clear screen
   ClearScreen(80, 160, 5);
@@ -522,13 +546,31 @@ void TFTPrintPlayerState()
     break;
   case 1:
     tft.setTextColor(0x001F, TFT_BLACK);
-    tft.drawString("Paused ||", xpos, 20, 2);
+    tft.drawString("Pause ||", xpos, 20, 2);
     break;
   case 2:
     tft.setTextColor(0xF800, TFT_BLACK);
-    tft.drawString("Stopped []", xpos, 20, 2);
+    tft.drawString("Stop []", xpos, 20, 2);
     break;
   }
+}
+
+void TFTPrintPlayerSongGeneralInfo()
+{
+  // clear player state screen area
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString("                             ", xpos, 40, 2);
+  tft.drawString("                             ", xpos, 60, 2);
+
+  tft.drawString(bitsPerSample == "?" ? "16" : bitsPerSample, xpos, 40, 2);
+  tft.drawString("bits", xpos + 40, 40, 2);
+  tft.drawString("|", xpos + 70, 40, 2);
+  tft.drawString(sampleRate + " Hz", xpos + 80, 40, 2);
+
+  tft.drawString(bitrate, xpos, 60, 2);
+  tft.drawString("kbps", xpos + 40, 60, 2);
+  tft.drawString("|", xpos + 70, 60, 2);
+  tft.drawString(codec, xpos + 80, 60, 2);
 }
 
 size_t utf8len(char *s)
@@ -670,14 +712,14 @@ String HttpGETRequest(const char *requestAddress)
 
   if (httpResponseCode > 0)
   {
-    //Serial.print("HTTP Response code: ");
-    //Serial.println(httpResponseCode);
+    // Serial.print("HTTP Response code: ");
+    // Serial.println(httpResponseCode);
     payload = http.getString();
   }
   else
   {
-    //Serial.print("Error code: ");
-    //Serial.println(httpResponseCode);
+    // Serial.print("Error code: ");
+    // Serial.println(httpResponseCode);
   }
   // Free resources
   http.end();
