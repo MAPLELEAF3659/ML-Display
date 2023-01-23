@@ -560,19 +560,19 @@ void TFTPrintPlayerSongGeneralInfo()
   tft.setTextColor(0xFFFF, TFT_BLACK);
   tft.drawString("            ", xpos + 80, 20, 2);
 
-  tft.setTextColor(0xFFFF, TextBackgroundByCodec(codec));
+  tft.setTextColor(0xFFFF, TextBackgroundColorByCodec(codec));
   // print song codec
   int xposCodec = xpos + 105;
   tft.drawString(" " + codec + " ", xposCodec + (codec.length() > 3 ? -5 : 0), 20, 2);
 }
 
-int TextBackgroundByCodec(String codecStr)
+int TextBackgroundColorByCodec(String codecStr)
 {
   if (codecStr == "FLAC")
   {
     return 0x0200; // dark green
   }
-  else if (codecStr == "WAV")
+  else if (codecStr == "PCM")
   {
     return 0x4000; // dark red
   }
