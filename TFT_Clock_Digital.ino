@@ -272,6 +272,7 @@ void loop()
       TFTPrintPlayerState();
       TFTPrintPlayerSongMetadata();
       TFTPrintPlayerSongGeneralInfo();
+      TFTPrintPlayerSongDuration();
       break;
     }
 
@@ -545,25 +546,44 @@ void TFTPrintPlayerSongMetadata()
 
 void TFTPrintPlayerSongGeneralInfo()
 {
-  // clear player state screen area
+  // clear song general info screen area
   tft.setTextColor(0xFFFF, TFT_BLACK);
   tft.drawString("                             ", 0, 67, 1);
-
+  // print song general info
   float sampleRateF = sampleRate.toFloat() / 1000;
   tft.drawString((bitsPerSample == "?" ? "16" : bitsPerSample) + "bits " +
                      String(sampleRateF, 1) + "kHz " +
                      bitrate + "kbps",
                  xpos, 67, 1);
 
-  // tft.drawString(bitsPerSample == "?" ? "16" : bitsPerSample, xpos, 40, 2);
-  // tft.drawString("bits", xpos + 40, 40, 2);
-  // tft.drawString("|", xpos + 70, 40, 2);
-  // tft.drawString(sampleRate + " Hz", xpos + 80, 40, 2);
+  // clear song codec screen area
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString("            ", xpos + 80, 20, 2);
 
-  // tft.drawString(bitrate, xpos, 60, 2);
-  // tft.drawString("kbps", xpos + 40, 60, 2);
-  // tft.drawString("|", xpos + 70, 60, 2);
-  // tft.drawString(codec, xpos + 80, 60, 2);
+  tft.setTextColor(0xFFFF, TextBackgroundByCodec(codec));
+  // print song codec
+  int xposCodec = xpos + 105;
+  tft.drawString(" " + codec + " ", xposCodec + (codec.length() > 3 ? -5 : 0), 20, 2);
+}
+
+int TextBackgroundByCodec(String codecStr)
+{
+  if (codecStr == "FLAC")
+  {
+    return 0x0200; // dark green
+  }
+  else if (codecStr == "WAV")
+  {
+    return 0x4000; // dark red
+  }
+  else if (codecStr == "MP3" || codecStr == "AAC")
+  {
+    return 0x020C; // dark blue
+  }
+  else
+  {
+    return 0x4208; // dark gray
+  }
 }
 
 void TFTPrintPlayerState()
