@@ -216,7 +216,7 @@ void loop()
     }
     else
     {
-      if (apiErrorCount < 3)
+      if (apiErrorCount < 5)
       {
         apiErrorCount++;
         return;
@@ -225,6 +225,14 @@ void loop()
       {
         isPlayerApiAvailable = false;
         playerPlayingIndex = -1;
+        artistName = "";
+        songName = "";
+        albumName = "";
+        songDuration = 0;
+        playingPostion = 0;
+        bitsPerSample = "";
+        sampleRate = "";
+        codec = "";
       }
     }
   }
@@ -465,31 +473,31 @@ void TFTPrintDHTInfo()
 
 int TextColorByTemperature(float temp)
 {
-  if (temp >= 31)
+  if (temp >= 34)
   {
     return 0xF800; // red
   }
-  else if (temp < 31 && temp >= 27)
-  {
-    return 0xFC00; // orange
-  }
-  else if (temp < 27 && temp >= 24)
+  else if (temp < 34 && temp >= 30)
   {
     return 0xFFE0; // yellow
   }
-  else if (temp < 24 && temp >= 20)
+  else if (temp < 30 && temp >= 26)
+  {
+    return 0xFC00; // orange
+  }
+  else if (temp < 26 && temp >= 22)
   {
     return 0x07E0; // green
   }
-  else if (temp < 20 && temp >= 16)
+  else if (temp < 22 && temp >= 18)
   {
     return 0x07F0; // blue green
   }
-  else if (temp < 16 && temp >= 12)
+  else if (temp < 18 && temp >= 14)
   {
     return 0x001F; // blue
   }
-  else if (temp < 12)
+  else if (temp < 14)
   {
     return 0x07FF; // light blue
   }
@@ -497,19 +505,23 @@ int TextColorByTemperature(float temp)
 
 int TextColorByHumidity(float humi)
 {
-  if (humi >= 75)
+  if (humi >= 80)
   {
     return 0xF800; // red
   }
-  else if (humi < 75 && humi >= 50)
+  else if (humi < 80 && humi >= 70)
   {
     return 0xFC00; // orange
   }
-  else if (humi < 50 && humi >= 25)
+  else if (humi < 70 && humi >= 60)
+  {
+    return 0xFFE0; // yellow
+  }
+  else if (humi < 60 && humi >= 40)
   {
     return 0x07E0; // green
   }
-  else if (humi < 25)
+  else if (humi < 40)
   {
     return 0x001F; // blue
   }
@@ -551,7 +563,7 @@ void TFTPrintPlayerSongGeneralInfo()
   tft.drawString("                             ", 0, 67, 1);
   // print song general info
   float sampleRateF = sampleRate.toFloat() / 1000;
-  tft.drawString((bitsPerSample == "?" ? "16" : bitsPerSample) + "bits " +
+  tft.drawString(bitsPerSample + "bits " +
                      String(sampleRateF, 1) + "kHz " +
                      bitrate + "kbps",
                  xpos, 67, 1);
@@ -562,8 +574,8 @@ void TFTPrintPlayerSongGeneralInfo()
 
   tft.setTextColor(0xFFFF, TextBackgroundColorByCodec(codec));
   // print song codec
-  int xposCodec = xpos + 105;
-  tft.drawString(" " + codec + " ", xposCodec + (codec.length() > 3 ? -5 : 0), 20, 2);
+  int xposCodec = xpos + 120;
+  tft.drawString(" " + codec + " ", xposCodec + (codec.length() * -5.2), 20, 2);
 }
 
 int TextBackgroundColorByCodec(String codecStr)
@@ -574,11 +586,15 @@ int TextBackgroundColorByCodec(String codecStr)
   }
   else if (codecStr == "PCM")
   {
+    return 0x020C; // dark blue
+  }
+  else if (codecStr == "DST64" || codecStr == "DSD64")
+  {
     return 0x4000; // dark red
   }
   else if (codecStr == "MP3" || codecStr == "AAC")
   {
-    return 0x020C; // dark blue
+    return 0x8B00; // orange
   }
   else
   {
