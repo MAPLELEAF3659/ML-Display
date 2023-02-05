@@ -216,7 +216,7 @@ void loop()
     }
     else
     {
-      if (apiErrorCount < 3)
+      if (apiErrorCount < 5)
       {
         apiErrorCount++;
         return;
@@ -225,6 +225,14 @@ void loop()
       {
         isPlayerApiAvailable = false;
         playerPlayingIndex = -1;
+        artistName = "";
+        songName = "";
+        albumName = "";
+        songDuration = 0;
+        playingPostion = 0;
+        bitsPerSample = "";
+        sampleRate = "";
+        codec = "";
       }
     }
   }
@@ -562,8 +570,8 @@ void TFTPrintPlayerSongGeneralInfo()
 
   tft.setTextColor(0xFFFF, TextBackgroundColorByCodec(codec));
   // print song codec
-  int xposCodec = xpos + 105;
-  tft.drawString(" " + codec + " ", xposCodec + (codec.length() > 3 ? -5 : 0), 20, 2);
+  int xposCodec = xpos + 120;
+  tft.drawString(" " + codec + " ", xposCodec + (codec.length() * -5.2), 20, 2);
 }
 
 int TextBackgroundColorByCodec(String codecStr)
@@ -574,11 +582,15 @@ int TextBackgroundColorByCodec(String codecStr)
   }
   else if (codecStr == "PCM")
   {
+    return 0x020C; // dark blue
+  }
+  else if (codecStr == "DST64" || codecStr == "DSD64")
+  {
     return 0x4000; // dark red
   }
   else if (codecStr == "MP3" || codecStr == "AAC")
   {
-    return 0x020C; // dark blue
+    return 0x8B00; // orange
   }
   else
   {
