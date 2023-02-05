@@ -563,7 +563,7 @@ void TFTPrintPlayerSongGeneralInfo()
   tft.drawString("                             ", 0, 67, 1);
   // print song general info
   float sampleRateF = sampleRate.toFloat() / 1000;
-  tft.drawString((bitsPerSample == "?" ? "16" : bitsPerSample) + "bits " +
+  tft.drawString(bitsPerSample + "bits " +
                      String(sampleRateF, 1) + "kHz " +
                      bitrate + "kbps",
                  xpos, 67, 1);
