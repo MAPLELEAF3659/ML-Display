@@ -473,31 +473,31 @@ void TFTPrintDHTInfo()
 
 int TextColorByTemperature(float temp)
 {
-  if (temp >= 31)
+  if (temp >= 34)
   {
     return 0xF800; // red
   }
-  else if (temp < 31 && temp >= 27)
-  {
-    return 0xFC00; // orange
-  }
-  else if (temp < 27 && temp >= 24)
+  else if (temp < 34 && temp >= 30)
   {
     return 0xFFE0; // yellow
   }
-  else if (temp < 24 && temp >= 20)
+  else if (temp < 30 && temp >= 26)
+  {
+    return 0xFC00; // orange
+  }
+  else if (temp < 26 && temp >= 22)
   {
     return 0x07E0; // green
   }
-  else if (temp < 20 && temp >= 16)
+  else if (temp < 22 && temp >= 18)
   {
     return 0x07F0; // blue green
   }
-  else if (temp < 16 && temp >= 12)
+  else if (temp < 18 && temp >= 14)
   {
     return 0x001F; // blue
   }
-  else if (temp < 12)
+  else if (temp < 14)
   {
     return 0x07FF; // light blue
   }
@@ -505,19 +505,23 @@ int TextColorByTemperature(float temp)
 
 int TextColorByHumidity(float humi)
 {
-  if (humi >= 75)
+  if (humi >= 80)
   {
     return 0xF800; // red
   }
-  else if (humi < 75 && humi >= 50)
+  else if (humi < 80 && humi >= 70)
   {
     return 0xFC00; // orange
   }
-  else if (humi < 50 && humi >= 25)
+  else if (humi < 70 && humi >= 60)
+  {
+    return 0xFFE0; // yellow
+  }
+  else if (humi < 60 && humi >= 40)
   {
     return 0x07E0; // green
   }
-  else if (humi < 25)
+  else if (humi < 40)
   {
     return 0x001F; // blue
   }
