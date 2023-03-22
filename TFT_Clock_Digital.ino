@@ -5,8 +5,8 @@
 #include "time.h"
 #include "DHTesp.h"
 #include <Ticker.h>
-#include <HTTPClient.h>
-#include <Arduino_JSON.h>
+// #include <HTTPClient.h>
+// #include <Arduino_JSON.h>
 
 /*
 **Upload settings**
@@ -15,6 +15,10 @@ Partition Scheme: Huge APP
 Flash Size: 4MB
 Upload Speed: 921600
 */
+
+//**Serial**
+String serialData;
+//**Serial**
 
 //**WiFi**
 const char *ssid = "ML-WiFi";
@@ -79,38 +83,56 @@ float temperaturePrevious = -1;
 float humidityPrevious = -1;
 //**DHT**
 
-//**Player API**
-const char *getPlayerInfoQuery =
-    "http://192.168.0.100:8880/api/query?player=true&trcolumns=%artist%,%title%,%album%,%__bitspersample%,%bitrate%,%samplerate%,%codec%";
-String apiResponse = "";
-bool isPlayerApiAvailable = false;
-int apiErrorCount = 0;
-//**Player API**
+// //**Player API**
+// const char *getPlayerInfoQuery =
+//     "http://192.168.0.100:8880/api/query?player=true&trcolumns=%artist%,%title%,%album%,%__bitspersample%,%bitrate%,%samplerate%,%codec%";
+// String apiResponse = "";
+// bool isPlayerApiAvailable = false;
+// int apiErrorCount = 0;
+// //**Player API**
 
 //**Player info**
+enum PlayerInfoId
+{
+  None = -1,
+  Artist,
+  Title,
+  Album,
+  BitDepth,
+  Bitrate,
+  SampleRate,
+  Codec,
+  Duration,
+  Position,
+  PlaybackState
+};
 enum PlayerState
 {
   Playing,
   Paused,
   Stopped
 };
+PlayerInfoId updatePlayerInfoId = None;
 PlayerState playerState = Stopped;
-PlayerState playerStatePrevious = Stopped;
-String artistName = "";
-String songName = "";
-String albumName = "";
+String songArtist = "";
+String songTitle = "";
+String songAlbum = "";
 int songDuration = 0;
-int playingPostion = 0;
-int playerPlayingIndex = -1;
-int playerPlayingIndexPrevious = -1;
-String bitsPerSample = "0";
-String bitrate = "0";
-String sampleRate = "0";
-String codec = "";
+int songPostion = 0;
+String songBitDepth = "0";
+String songBitrate = "0";
+String songSampleRate = "0";
+String songCodec = "";
 //**Player info**
 
-int screenState = 0; // 0 = main, 1 = player
-int screenStatePrevious = -1;
+enum ScreenState
+{
+  NoneScreen = -1,
+  MainScreen,
+  PlayerScreen
+};
+ScreenState screenState = MainScreen;
+ScreenState screenStatePrevious = NoneScreen;
 
 void setup()
 {
@@ -158,97 +180,21 @@ void loop()
   // get time info
   getLocalTime(&timeinfo);
 
-  // update by sec
-  if (timeinfo.tm_sec % 3)
-  {
-    // try to get player info by api
-    apiResponse = HttpGETRequest(getPlayerInfoQuery);
-    if (apiResponse != "{}")
-    {
-      JSONVar jsonObj = JSON.parse(apiResponse);
-      char playerStateByJsonChar = JSON.stringify(jsonObj["player"]["playbackState"])[2];
-      switch (playerStateByJsonChar)
-      {
-      case 'l':
-        playerState = Playing;
-        break;
-      case 'a':
-        playerState = Paused;
-        break;
-      case 't':
-        playerState = Stopped;
-        break;
-      }
-
-      if (playerState == Playing)
-      {
-        playerPlayingIndex = jsonObj["player"]["activeItem"]["index"];
-
-        artistName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][0]);
-        artistName = artistName.substring(1, artistName.length() - 1);
-
-        songName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][1]);
-        songName = songName.substring(1, songName.length() - 1);
-
-        albumName = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][2]);
-        albumName = albumName.substring(1, albumName.length() - 1);
-
-        String songDurationStr = JSON.stringify(jsonObj["player"]["activeItem"]["duration"]);
-        songDuration = int(round(songDurationStr.toFloat()));
-
-        String playingPostionStr = JSON.stringify(jsonObj["player"]["activeItem"]["position"]);
-        playingPostion = int(round(playingPostionStr.toFloat()));
-
-        bitsPerSample = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][3]);
-        bitsPerSample = bitsPerSample.substring(1, bitsPerSample.length() - 1);
-
-        bitrate = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][4]);
-        bitrate = bitrate.substring(1, bitrate.length() - 1);
-
-        sampleRate = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][5]);
-        sampleRate = sampleRate.substring(1, sampleRate.length() - 1);
-
-        codec = JSON.stringify(jsonObj["player"]["activeItem"]["columns"][6]);
-        codec = codec.substring(1, codec.length() - 1);
-      }
-      apiErrorCount = 0;
-      isPlayerApiAvailable = true;
-    }
-    else
-    {
-      if (apiErrorCount < 5)
-      {
-        apiErrorCount++;
-        return;
-      }
-      else
-      {
-        isPlayerApiAvailable = false;
-        playerPlayingIndex = -1;
-        artistName = "";
-        songName = "";
-        albumName = "";
-        songDuration = 0;
-        playingPostion = 0;
-        bitsPerSample = "";
-        sampleRate = "";
-        codec = "";
-      }
-    }
-  }
+  // get serial data
+  serialData = Serial.readStringUntil('\n');
 
   // change screenState
-  if (isPlayerApiAvailable)
+  if (serialData != "")
   {
-    screenState = 1;
-  }
-  else
-  {
-    screenState = 0;
+    screenState = (ScreenState)serialData.substring(0, serialData.indexOf(',')).toInt();
+    if (screenState == MainScreen)
+    {
+      serialData = "";
+    }
   }
 
   // force clear screen and previous states when screenState changed
-  if (screenStatePrevious != screenState)
+  if (screenState != screenStatePrevious)
   {
     ClearScreen(0, 160, 5);
     dayPrevious = -1;
@@ -257,7 +203,7 @@ void loop()
 
     switch (screenState)
     {
-    case 0: // main
+    case MainScreen:
       // **force print dht info
       tft.setTextColor(0xFFFF, TFT_BLACK);
       // write temperature title
@@ -270,29 +216,31 @@ void loop()
       // write humidity
       tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
       tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
+
       break;
-    case 1: // player
+    case PlayerScreen:
       // draw upper bar(time&date) background
       tft.setTextColor(0xFFFF, upperBarBackgroundColor);
       tft.drawString("                   ", 0, 0, 2);
 
-      // force print player infos
       TFTPrintPlayerState();
+      TFTPrintPlayerSongDuration();
       TFTPrintPlayerSongMetadata();
       TFTPrintPlayerSongGeneralInfo();
-      TFTPrintPlayerSongDuration();
+
       break;
     }
 
     screenStatePrevious = screenState;
   }
 
+  // show screen by screenState
   switch (screenState)
   {
-  case 0: // main
+  case MainScreen:
     ShowMainScreen();
     break;
-  case 1: // player
+  case PlayerScreen:
     ShowPlayerScreen();
     break;
   }
@@ -352,29 +300,42 @@ void ShowPlayerScreen()
   // update by sec
   if (timeinfo.tm_sec != secPrevious)
   {
-    if (playerStatePrevious != playerState)
-    {
-      TFTPrintPlayerState();
-      playerStatePrevious = playerState;
-    }
-
-    TFTPrintPlayerSongDuration();
-
-    // check if player current song was updated
-    if (playerPlayingIndexPrevious != playerPlayingIndex)
-    {
-      TFTPrintPlayerSongMetadata();
-      TFTPrintPlayerSongGeneralInfo();
-      // update pervious state
-      playerPlayingIndexPrevious = playerPlayingIndex;
-    }
-
     // blink ":"
     tft.setTextColor(0xFFFF, upperBarBackgroundColor);
     tft.drawChar(timeinfo.tm_sec % 2 == 0 ? ':' : ' ', 17, 5, 1);
 
     // update previous state
     secPrevious = timeinfo.tm_sec;
+  }
+
+  if (serialData != "")
+  {
+    PlayerInfoId playerInfoId = (PlayerInfoId)(serialData.substring(serialData.indexOf(',') + 1, serialData.lastIndexOf(',')).toInt());
+    String value = serialData.substring(serialData.lastIndexOf(',') + 1);
+    PlayerInfoUpdate(playerInfoId, value);
+    switch (playerInfoId)
+    {
+    case PlaybackState:
+      TFTPrintPlayerState();
+      break;
+    case Duration:
+    case Position:
+      TFTPrintPlayerSongDuration();
+      break;
+    case Artist:
+    case Album:
+    case Title:
+      TFTPrintPlayerSongMetadata();
+      break;
+    case BitDepth:
+    case Bitrate:
+    case SampleRate:
+    case Codec:
+      TFTPrintPlayerSongGeneralInfo();
+      break;
+    }
+
+    serialData = "";
   }
 }
 
@@ -538,19 +499,19 @@ void TFTPrintPlayerSongMetadata()
   tft.loadFont(Silver_16);
 
   // print artist name
-  char artistNameArr[artistName.length()];
-  artistName.toCharArray(artistNameArr, artistName.length());
-  tft.drawString((utf8len(artistNameArr) > 20 ? artistName.substring(0, artistName.indexOf(utf8index(artistNameArr, 17))) + "..." : artistName), xpos, ypos + 75);
+  char artistNameArr[songArtist.length()];
+  songArtist.toCharArray(artistNameArr, songArtist.length());
+  tft.drawString((utf8len(artistNameArr) > 20 ? songArtist.substring(0, songArtist.indexOf(utf8index(artistNameArr, 17))) + "..." : songArtist), xpos, ypos + 75);
 
   // print album name
-  char albumNameArr[albumName.length()];
-  albumName.toCharArray(albumNameArr, albumName.length());
-  tft.drawString((utf8len(albumNameArr) > 20 ? albumName.substring(0, albumName.indexOf(utf8index(albumNameArr, 17))) + "..." : albumName), xpos, ypos + 90);
+  char albumNameArr[songAlbum.length()];
+  songAlbum.toCharArray(albumNameArr, songAlbum.length());
+  tft.drawString((utf8len(albumNameArr) > 20 ? songAlbum.substring(0, songAlbum.indexOf(utf8index(albumNameArr, 17))) + "..." : songAlbum), xpos, ypos + 90);
 
   // print song name
-  char songNameArr[songName.length()];
-  songName.toCharArray(songNameArr, songName.length());
-  tft.drawString((utf8len(songNameArr) > 20 ? songName.substring(0, songName.indexOf(utf8index(songNameArr, 17))) + "..." : songName), xpos, ypos + 105);
+  char songNameArr[songTitle.length()];
+  songTitle.toCharArray(songNameArr, songTitle.length());
+  tft.drawString((utf8len(songNameArr) > 20 ? songTitle.substring(0, songTitle.indexOf(utf8index(songNameArr, 17))) + "..." : songTitle), xpos, ypos + 105);
 
   // unload han character
   tft.unloadFont();
@@ -562,20 +523,20 @@ void TFTPrintPlayerSongGeneralInfo()
   tft.setTextColor(0xFFFF, TFT_BLACK);
   tft.drawString("                             ", 0, 67, 1);
   // print song general info
-  float sampleRateF = sampleRate.toFloat() / 1000;
-  tft.drawString(bitsPerSample + "bits " +
+  float sampleRateF = songSampleRate.toFloat() / 1000;
+  tft.drawString(songBitDepth + "bits " +
                      String(sampleRateF, 1) + "kHz " +
-                     bitrate + "kbps",
+                     songBitrate + "kbps",
                  xpos, 67, 1);
 
   // clear song codec screen area
   tft.setTextColor(0xFFFF, TFT_BLACK);
   tft.drawString("            ", xpos + 80, 20, 2);
 
-  tft.setTextColor(0xFFFF, TextBackgroundColorByCodec(codec));
+  tft.setTextColor(0xFFFF, TextBackgroundColorByCodec(songCodec));
   // print song codec
   int xposCodec = xpos + 120;
-  tft.drawString(" " + codec + " ", xposCodec + (codec.length() * -5.2), 20, 2);
+  tft.drawString(" " + songCodec + " ", xposCodec + (songCodec.length() * -5.2), 20, 2);
 }
 
 int TextBackgroundColorByCodec(String codecStr)
@@ -630,8 +591,8 @@ void TFTPrintPlayerSongDuration()
   tft.setTextColor(0xFFFF, TFT_BLACK);
   // tft.drawString("                             ", 0, 50, 1);
 
-  tft.drawString(((playingPostion / 60) < 10 ? "0" : "") + String(playingPostion / 60) + ":" +
-                     ((playingPostion % 60) < 10 ? "0" : "") + String(playingPostion % 60),
+  tft.drawString(((songPostion / 60) < 10 ? "0" : "") + String(songPostion / 60) + ":" +
+                     ((songPostion % 60) < 10 ? "0" : "") + String(songPostion % 60),
                  xpos, 42, 1);
 
   tft.drawString(((songDuration / 60 < 10) ? "0" : "") + String(songDuration / 60) + ":" +
@@ -639,7 +600,7 @@ void TFTPrintPlayerSongDuration()
                  xpos + 113, 42, 1);
 
   int xposSong = xpos;
-  int xIndexPlayingPosition = map(((float)playingPostion / (float)songDuration) * 100, 0, 100, 0, 23);
+  int xIndexPlayingPosition = map(((float)songPostion / (float)songDuration) * 100, 0, 100, 0, 23);
   for (int i = 0; i < 24; i++)
   {
     xposSong += tft.drawString(i == xIndexPlayingPosition ? "+" : "-", xposSong, 52, 1);
@@ -765,39 +726,54 @@ bool getTemperature()
   return true;
 }
 
-String HttpGETRequest(const char *requestAddress)
+void PlayerInfoUpdate(PlayerInfoId infoId, String value)
 {
-  WiFiClient client;
-  HTTPClient http;
-  http.setConnectTimeout(100);
-  client.setTimeout(100);
-
-  // Your Domain name with URL path or IP address with path
-  http.begin(client, requestAddress);
-
-  // If you need Node-RED/server authentication, insert user and password below
-  // http.setAuthorization("REPLACE_WITH_SERVER_USERNAME", "REPLACE_WITH_SERVER_PASSWORD");
-
-  // Send HTTP POST request
-  int httpResponseCode = http.GET();
-
-  String payload = "{}";
-
-  if (httpResponseCode > 0)
+  switch (infoId)
   {
-    // Serial.print("HTTP Response code: ");
-    // Serial.println(httpResponseCode);
-    payload = http.getString();
+  case Artist:
+    songArtist = value;
+    break;
+  case Album:
+    songAlbum = value;
+    break;
+  case Title:
+    songTitle = value;
+    break;
+  case BitDepth:
+    songBitDepth = value;
+    break;
+  case Bitrate:
+    songBitrate = value;
+    break;
+  case SampleRate:
+    songSampleRate = value;
+    break;
+  case Codec:
+    songCodec = value;
+    break;
+  case Duration:
+    songDuration = value.toFloat();
+    break;
+  case Position:
+    songPostion = value.toFloat();
+    break;
+  case PlaybackState:
+    switch (value[1])
+    {
+    case 'l':
+      playerState = Playing;
+      break;
+    case 'a':
+      playerState = Paused;
+      break;
+    case 't':
+      playerState = Stopped;
+      break;
+    }
+    break;
+  default:
+    break;
   }
-  else
-  {
-    // Serial.print("Error code: ");
-    // Serial.println(httpResponseCode);
-  }
-  // Free resources
-  http.end();
-
-  return payload;
 }
 
 void ClearScreen(int startPoint, int endPoint, int perUnit)
