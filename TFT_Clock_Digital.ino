@@ -127,11 +127,12 @@ String songCodec = "";
 
 enum ScreenState
 {
-  Main,
-  Player
+  NoneScreen = -1,
+  MainScreen,
+  PlayerScreen
 };
-ScreenState screenState = Main; // 0 = main, 1 = player
-ScreenState screenStatePrevious = Main;
+ScreenState screenState = MainScreen;
+ScreenState screenStatePrevious = NoneScreen;
 
 void setup()
 {
@@ -172,19 +173,6 @@ void setup()
   tft.println("[System]Welcome!");
   delay(5000);
   ClearScreen(0, 160, 5);
-
-  // **force print dht info
-  tft.setTextColor(0xFFFF, TFT_BLACK);
-  // write temperature title
-  tft.drawString("Temperature " + String(temperature < 10 ? "0" : ""), xpos + 10, ypos + 80, 2);
-  // write humidity title
-  tft.drawString("Humidity     " + String(humidity < 10 ? "0" : ""), xpos + 10, ypos + 100, 2);
-  // write temperature
-  tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
-  tft.drawString(String(temperature, 1) + "C", xpos + 95, ypos + 80, 2);
-  // write humidity
-  tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
-  tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
 }
 
 void loop()
@@ -199,7 +187,7 @@ void loop()
   if (serialData != "")
   {
     screenState = (ScreenState)serialData.substring(0, serialData.indexOf(',')).toInt();
-    if (screenState == Main)
+    if (screenState == MainScreen)
     {
       serialData = "";
     }
@@ -215,7 +203,7 @@ void loop()
 
     switch (screenState)
     {
-    case Main:
+    case MainScreen:
       // **force print dht info
       tft.setTextColor(0xFFFF, TFT_BLACK);
       // write temperature title
@@ -230,7 +218,7 @@ void loop()
       tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
 
       break;
-    case Player:
+    case PlayerScreen:
       // draw upper bar(time&date) background
       tft.setTextColor(0xFFFF, upperBarBackgroundColor);
       tft.drawString("                   ", 0, 0, 2);
@@ -249,10 +237,10 @@ void loop()
   // show screen by screenState
   switch (screenState)
   {
-  case Main:
+  case MainScreen:
     ShowMainScreen();
     break;
-  case Player:
+  case PlayerScreen:
     ShowPlayerScreen();
     break;
   }
