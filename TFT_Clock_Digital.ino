@@ -99,6 +99,8 @@ String songBitDepth = "0";
 String songBitrate = "0";
 String songSampleRate = "0";
 String songCodec = "";
+// for tft print
+int songMetadataYPosOffset = 75;
 //**Player info**
 
 enum ScreenState
@@ -194,66 +196,6 @@ void NTPGetTime(TimerHandle_t xTimer)
   getLocalTime(&timeinfo);
 }
 
-void PlayerInfoUpdate(PlayerInfoId infoId, String value)
-{
-  switch (infoId)
-  {
-  case Artist:
-    songArtist = value;
-    TFTPrintPlayerSongMetadata();
-    break;
-  case Album:
-    songAlbum = value;
-    TFTPrintPlayerSongMetadata();
-    break;
-  case Title:
-    songTitle = value;
-    TFTPrintPlayerSongMetadata();
-    break;
-  case BitDepth:
-    songBitDepth = value;
-    TFTPrintPlayerSongGeneralInfo();
-    break;
-  case Bitrate:
-    songBitrate = value;
-    TFTPrintPlayerSongGeneralInfo();
-    break;
-  case SampleRate:
-    songSampleRate = value;
-    TFTPrintPlayerSongGeneralInfo();
-    break;
-  case Codec:
-    songCodec = value;
-    TFTPrintPlayerSongGeneralInfo();
-    break;
-  case Duration:
-    songDuration = value.toFloat();
-    TFTPrintPlayerSongDuration();
-    break;
-  case Position:
-    songPostion = value.toFloat();
-    TFTPrintPlayerSongDuration();
-    break;
-  case PlaybackState:
-    switch (value[1])
-    {
-    case 'l':
-      playerState = Playing;
-      break;
-    case 'a':
-      playerState = Paused;
-      break;
-    case 't':
-      playerState = Stopped;
-      break;
-    }
-    TFTPrintPlayerState();
-    break;
-  default:
-    break;
-  }
-}
-
 void loop()
 {
   if (Serial.available())
@@ -325,7 +267,7 @@ void ChangeScreenState(ScreenState targetScreenState)
 
     TFTPrintPlayerState();
     TFTPrintPlayerSongDuration();
-    TFTPrintPlayerSongMetadata();
+    TFTPrintPlayerSongPosition();
     TFTPrintPlayerSongGeneralInfo();
 
     break;
@@ -392,6 +334,66 @@ void ShowPlayerScreen()
 
     // update previous state
     secPrevious = timeinfo.tm_sec;
+  }
+}
+
+void PlayerInfoUpdate(PlayerInfoId infoId, String value)
+{
+  switch (infoId)
+  {
+  case Artist:
+    songArtist = value;
+    TFTPrintPlayerSongMetadata(songArtist, 0);
+    break;
+  case Album:
+    songAlbum = value;
+    TFTPrintPlayerSongMetadata(songAlbum, 1);
+    break;
+  case Title:
+    songTitle = value;
+    TFTPrintPlayerSongMetadata(songTitle, 2);
+    break;
+  case BitDepth:
+    songBitDepth = value;
+    TFTPrintPlayerSongGeneralInfo();
+    break;
+  case Bitrate:
+    songBitrate = value;
+    TFTPrintPlayerSongGeneralInfo();
+    break;
+  case SampleRate:
+    songSampleRate = value;
+    TFTPrintPlayerSongGeneralInfo();
+    break;
+  case Codec:
+    songCodec = value;
+    TFTPrintPlayerSongCodec();
+    break;
+  case Duration:
+    songDuration = value.toFloat();
+    TFTPrintPlayerSongDuration();
+    break;
+  case Position:
+    songPostion = value.toFloat();
+    TFTPrintPlayerSongPosition();
+    break;
+  case PlaybackState:
+    switch (value[1])
+    {
+    case 'l':
+      playerState = Playing;
+      break;
+    case 'a':
+      playerState = Paused;
+      break;
+    case 't':
+      playerState = Stopped;
+      break;
+    }
+    TFTPrintPlayerState();
+    break;
+  default:
+    break;
   }
 }
 
@@ -546,30 +548,19 @@ int TextColorByHumidity(float humi)
   }
 }
 
-void TFTPrintPlayerSongMetadata()
+void TFTPrintPlayerSongMetadata(String value, int lineIndex)
 {
-  // clear screen
-  ClearScreen(80, 160, 5);
-
+  // set color
   tft.setTextColor(0xFFFF, TFT_BLACK);
+
+  // clear screen
+  tft.drawString("                            ", xpos, ypos + songMetadataYPosOffset - 2 + lineIndex * 15, 2);
 
   // load han character
   tft.loadFont(Silver_16);
 
-  // print artist name
-  char artistNameArr[songArtist.length()];
-  songArtist.toCharArray(artistNameArr, songArtist.length());
-  tft.drawString((utf8len(artistNameArr) > 20 ? songArtist.substring(0, songArtist.indexOf(utf8index(artistNameArr, 17))) + "..." : songArtist), xpos, ypos + 75);
-
-  // print album name
-  char albumNameArr[songAlbum.length()];
-  songAlbum.toCharArray(albumNameArr, songAlbum.length());
-  tft.drawString((utf8len(albumNameArr) > 20 ? songAlbum.substring(0, songAlbum.indexOf(utf8index(albumNameArr, 17))) + "..." : songAlbum), xpos, ypos + 90);
-
-  // print song name
-  char songNameArr[songTitle.length()];
-  songTitle.toCharArray(songNameArr, songTitle.length());
-  tft.drawString((utf8len(songNameArr) > 20 ? songTitle.substring(0, songTitle.indexOf(utf8index(songNameArr, 17))) + "..." : songTitle), xpos, ypos + 105);
+  // print artist/album/title name
+  tft.drawString(value, xpos, ypos + songMetadataYPosOffset + lineIndex * 15);
 
   // unload han character
   tft.unloadFont();
@@ -586,7 +577,10 @@ void TFTPrintPlayerSongGeneralInfo()
                      String(sampleRateF, 1) + "kHz " +
                      songBitrate + "kbps",
                  xpos, 67, 1);
+}
 
+void TFTPrintPlayerSongCodec()
+{
   // clear song codec screen area
   tft.setTextColor(0xFFFF, TFT_BLACK);
   tft.drawString("            ", xpos + 80, 20, 2);
@@ -645,18 +639,26 @@ void TFTPrintPlayerState()
 
 void TFTPrintPlayerSongDuration()
 {
-  // clear player state screen area
+  // set color
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  // tft.drawString("                             ", 0, 50, 1);
 
+  // print duration in 00:00 format
+  tft.drawString(((songDuration / 60 < 10) ? "0" : "") + String(songDuration / 60) + ":" +
+                     ((songDuration % 60 < 10) ? "0" : "") + String(songDuration % 60),
+                 xpos + 113, 42, 1);
+}
+
+void TFTPrintPlayerSongPosition()
+{
+  // set color
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+
+  // print position in 00:00 format
   tft.drawString(((songPostion / 60) < 10 ? "0" : "") + String(songPostion / 60) + ":" +
                      ((songPostion % 60) < 10 ? "0" : "") + String(songPostion % 60),
                  xpos, 42, 1);
 
-  tft.drawString(((songDuration / 60 < 10) ? "0" : "") + String(songDuration / 60) + ":" +
-                     ((songDuration % 60 < 10) ? "0" : "") + String(songDuration % 60),
-                 xpos + 113, 42, 1);
-
+  // draw position bar
   int xposSong = xpos;
   int xIndexPlayingPosition = map(((float)songPostion / (float)songDuration) * 100, 0, 100, 0, 23);
   for (int i = 0; i < 24; i++)
