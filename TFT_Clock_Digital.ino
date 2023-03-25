@@ -13,10 +13,6 @@ Flash Size: 4MB
 Upload Speed: 921600
 */
 
-//**Serial**
-String serialData;
-//**Serial**
-
 //**WiFi**
 const char *ssid = "ML-WiFi";
 const char *password = "95089608";
@@ -111,8 +107,7 @@ enum ScreenState
   MainScreen,
   PlayerScreen
 };
-ScreenState screenState = MainScreen;
-ScreenState screenStatePrevious = NoneScreen;
+ScreenState screenState = NoneScreen;
 
 void setup()
 {
@@ -137,23 +132,24 @@ void setup()
   }
   tft.println();
   tft.println("[WiFi]Connected!");
+  // tft.println("[WiFi]IP: "+WiFi.localIP());
 
   // setup ntp server
   tft.println("[NTP server]Setting up...");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-  StartTimer(timerNTP, "timerNTP", 500, 0, NTPGetTime);
+  StartTimer(timerNTP, "timerNTP", 500, 1, NTPGetTime);
   tft.println("[NTP server]Done.");
 
   // setup dht11
   tft.println("[DHT11]Setting up...");
   dht.setup(dhtPin, DHTesp::DHT11);
-  StartTimer(timerDHT, "timerDHT", 5000, 1, DHTGetTempAndHumi);
+  StartTimer(timerDHT, "timerDHT", 5000, 2, DHTGetTempAndHumi);
   tft.println("[DHT11]Done.");
 
   // setup complete
   tft.println("[System]Welcome!");
   delay(5000);
-  ClearScreen(0, 160, 5);
+  ChangeScreenState(MainScreen);
 }
 
 void DHTGetTempAndHumi(TimerHandle_t xTimer)
@@ -198,60 +194,83 @@ void NTPGetTime(TimerHandle_t xTimer)
   getLocalTime(&timeinfo);
 }
 
+void PlayerInfoUpdate(PlayerInfoId infoId, String value)
+{
+  switch (infoId)
+  {
+  case Artist:
+    songArtist = value;
+    TFTPrintPlayerSongMetadata();
+    break;
+  case Album:
+    songAlbum = value;
+    TFTPrintPlayerSongMetadata();
+    break;
+  case Title:
+    songTitle = value;
+    TFTPrintPlayerSongMetadata();
+    break;
+  case BitDepth:
+    songBitDepth = value;
+    TFTPrintPlayerSongGeneralInfo();
+    break;
+  case Bitrate:
+    songBitrate = value;
+    TFTPrintPlayerSongGeneralInfo();
+    break;
+  case SampleRate:
+    songSampleRate = value;
+    TFTPrintPlayerSongGeneralInfo();
+    break;
+  case Codec:
+    songCodec = value;
+    TFTPrintPlayerSongGeneralInfo();
+    break;
+  case Duration:
+    songDuration = value.toFloat();
+    TFTPrintPlayerSongDuration();
+    break;
+  case Position:
+    songPostion = value.toFloat();
+    TFTPrintPlayerSongDuration();
+    break;
+  case PlaybackState:
+    switch (value[1])
+    {
+    case 'l':
+      playerState = Playing;
+      break;
+    case 'a':
+      playerState = Paused;
+      break;
+    case 't':
+      playerState = Stopped;
+      break;
+    }
+    TFTPrintPlayerState();
+    break;
+  default:
+    break;
+  }
+}
+
 void loop()
 {
-  // get serial data
-  serialData = Serial.readStringUntil('\n');
-
-  // change screenState
-  if (serialData != "")
+  if (Serial.available())
   {
-    screenState = (ScreenState)serialData.substring(0, serialData.indexOf(',')).toInt();
-    if (screenState == MainScreen)
+    String message = Serial.readStringUntil('\n');
+
+    ScreenState targetScreenState = (ScreenState)message.substring(0, message.indexOf(',')).toInt();
+    ChangeScreenState(targetScreenState);
+
+    switch (targetScreenState)
     {
-      serialData = "";
-    }
-  }
-
-  // force clear screen and previous states when screenState changed
-  if (screenState != screenStatePrevious)
-  {
-    ClearScreen(0, 160, 5);
-    dayPrevious = -1;
-    minPrevious = -1;
-    secPrevious = -1;
-
-    switch (screenState)
-    {
-    case MainScreen:
-      // **force print dht info
-      tft.setTextColor(0xFFFF, TFT_BLACK);
-      // write temperature title
-      tft.drawString("Temperature " + String(temperature < 10 ? "0" : ""), xpos + 10, ypos + 80, 2);
-      // write humidity title
-      tft.drawString("Humidity     " + String(humidity < 10 ? "0" : ""), xpos + 10, ypos + 100, 2);
-      // write temperature
-      tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
-      tft.drawString(String(temperature, 1) + "C", xpos + 95, ypos + 80, 2);
-      // write humidity
-      tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
-      tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
-
-      break;
     case PlayerScreen:
-      // draw upper bar(time&date) background
-      tft.setTextColor(0xFFFF, upperBarBackgroundColor);
-      tft.drawString("                   ", 0, 0, 2);
-
-      TFTPrintPlayerState();
-      TFTPrintPlayerSongDuration();
-      TFTPrintPlayerSongMetadata();
-      TFTPrintPlayerSongGeneralInfo();
-
+      PlayerInfoId playerInfoId = (PlayerInfoId)(message.substring(message.indexOf(',') + 1, message.lastIndexOf(',')).toInt());
+      String value = message.substring(message.lastIndexOf(',') + 1);
+      PlayerInfoUpdate(playerInfoId, value);
       break;
     }
-
-    screenStatePrevious = screenState;
   }
 
   // show screen by screenState
@@ -262,6 +281,53 @@ void loop()
     break;
   case PlayerScreen:
     ShowPlayerScreen();
+    break;
+  }
+}
+
+void ChangeScreenState(ScreenState targetScreenState)
+{
+  if (screenState == targetScreenState)
+  {
+    return;
+  }
+
+  screenState = targetScreenState;
+
+  // force clear screen and previous states when screenState changed
+  ClearScreen(0, 160, 5);
+  dayPrevious = -1;
+  minPrevious = -1;
+  secPrevious = -1;
+
+  // print first screen
+  switch (screenState)
+  {
+  case MainScreen:
+    // **force print dht info
+    tft.setTextColor(0xFFFF, TFT_BLACK);
+    // write temperature title
+    tft.drawString("Temperature " + String(temperature < 10 ? "0" : ""), xpos + 10, ypos + 80, 2);
+    // write humidity title
+    tft.drawString("Humidity     " + String(humidity < 10 ? "0" : ""), xpos + 10, ypos + 100, 2);
+    // write temperature
+    tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
+    tft.drawString(String(temperature, 1) + "C", xpos + 95, ypos + 80, 2);
+    // write humidity
+    tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
+    tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
+
+    break;
+  case PlayerScreen:
+    // draw upper bar(time&date) background
+    tft.setTextColor(0xFFFF, upperBarBackgroundColor);
+    tft.drawString("                   ", 0, 0, 2);
+
+    TFTPrintPlayerState();
+    TFTPrintPlayerSongDuration();
+    TFTPrintPlayerSongMetadata();
+    TFTPrintPlayerSongGeneralInfo();
+
     break;
   }
 }
@@ -327,43 +393,13 @@ void ShowPlayerScreen()
     // update previous state
     secPrevious = timeinfo.tm_sec;
   }
-
-  if (serialData != "")
-  {
-    PlayerInfoId playerInfoId = (PlayerInfoId)(serialData.substring(serialData.indexOf(',') + 1, serialData.lastIndexOf(',')).toInt());
-    String value = serialData.substring(serialData.lastIndexOf(',') + 1);
-    PlayerInfoUpdate(playerInfoId, value);
-    switch (playerInfoId)
-    {
-    case PlaybackState:
-      TFTPrintPlayerState();
-      break;
-    case Duration:
-    case Position:
-      TFTPrintPlayerSongDuration();
-      break;
-    case Artist:
-    case Album:
-    case Title:
-      TFTPrintPlayerSongMetadata();
-      break;
-    case BitDepth:
-    case Bitrate:
-    case SampleRate:
-    case Codec:
-      TFTPrintPlayerSongGeneralInfo();
-      break;
-    }
-
-    serialData = "";
-  }
 }
 
 void TFTPrintTime()
 {
   int xposTime = xpos;
   int yposTime = ypos;
-  if (screenState == 0)
+  if (screenState == MainScreen)
   {
     // print time
     tft.setTextColor(0x39C4, TFT_BLACK);
@@ -388,7 +424,7 @@ void TFTPrintTime()
 
 void TFTPrintDate()
 {
-  if (screenState == 0)
+  if (screenState == MainScreen)
   {
     tft.setTextColor(0xFFFF, TFT_BLACK);
     String dayOfWeekStr;
@@ -433,7 +469,7 @@ void TFTPrintDate()
 
 void TFTPrintDHTInfo()
 {
-  // check if temperature or humidity was updated
+  // check if temperature was updated
   if (temperature != temperaturePrevious)
   {
     tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
@@ -442,6 +478,8 @@ void TFTPrintDHTInfo()
     // update pervious state
     temperaturePrevious = temperature;
   }
+
+  // check if humidity was updated
   if (humidity != humidityPrevious)
   {
     tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
@@ -624,56 +662,6 @@ void TFTPrintPlayerSongDuration()
   for (int i = 0; i < 24; i++)
   {
     xposSong += tft.drawString(i == xIndexPlayingPosition ? "+" : "-", xposSong, 52, 1);
-  }
-}
-
-void PlayerInfoUpdate(PlayerInfoId infoId, String value)
-{
-  switch (infoId)
-  {
-  case Artist:
-    songArtist = value;
-    break;
-  case Album:
-    songAlbum = value;
-    break;
-  case Title:
-    songTitle = value;
-    break;
-  case BitDepth:
-    songBitDepth = value;
-    break;
-  case Bitrate:
-    songBitrate = value;
-    break;
-  case SampleRate:
-    songSampleRate = value;
-    break;
-  case Codec:
-    songCodec = value;
-    break;
-  case Duration:
-    songDuration = value.toFloat();
-    break;
-  case Position:
-    songPostion = value.toFloat();
-    break;
-  case PlaybackState:
-    switch (value[1])
-    {
-    case 'l':
-      playerState = Playing;
-      break;
-    case 'a':
-      playerState = Paused;
-      break;
-    case 't':
-      playerState = Stopped;
-      break;
-    }
-    break;
-  default:
-    break;
   }
 }
 
