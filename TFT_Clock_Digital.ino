@@ -160,7 +160,7 @@ void DHTGetTempAndHumi(TimerHandle_t xTimer)
   // Check if any reads failed and exit early (to try again).
   if (dht.getStatus() != 0)
   {
-    tft.println("[DHT11]Error status: " + String(dht.getStatusString()));
+    Serial.println("[DHT11]Error status: " + String(dht.getStatusString()));
   }
 
   float heatIndex = dht.computeHeatIndex(newValues.temperature, newValues.humidity);
