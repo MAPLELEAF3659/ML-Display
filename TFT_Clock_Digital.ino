@@ -4,9 +4,6 @@
 #include <WiFi.h>
 #include "time.h"
 #include "DHTesp.h"
-#include <Ticker.h>
-// #include <HTTPClient.h>
-// #include <Arduino_JSON.h>
 
 /*
 **Upload settings**
@@ -26,6 +23,7 @@ const char *password = "95089608";
 //**WiFi**
 
 //**NTP**
+TimerHandle_t timerNTP;
 const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 28800; // GMT+8
 const int daylightOffset_sec = 0;
@@ -64,32 +62,14 @@ DHTesp dht;
 // Pin number for DHT11 data pin
 int dhtPin = 17; // VCC=5V
 // Update duration
-int dhtUpdateDuration = 5;
-void DHTTask(void *pvParameters);
-bool getTemperature();
-void TriggerGetDHT();
-// Task handle for the light value read task
-TaskHandle_t dhtTaskHandle = NULL;
-// Ticker for temperature reading
-Ticker dhtTicker;
-// Comfort profile
-ComfortState cf;
-// Flag if task should run
-bool tasksEnabled = false;
+int dhtUpdateInterval = 5000; // ms
+TimerHandle_t timerDHT;
 // DHT info
 float temperature = 0;
 float humidity = 0;
 float temperaturePrevious = -1;
 float humidityPrevious = -1;
 //**DHT**
-
-// //**Player API**
-// const char *getPlayerInfoQuery =
-//     "http://192.168.0.100:8880/api/query?player=true&trcolumns=%artist%,%title%,%album%,%__bitspersample%,%bitrate%,%samplerate%,%codec%";
-// String apiResponse = "";
-// bool isPlayerApiAvailable = false;
-// int apiErrorCount = 0;
-// //**Player API**
 
 //**Player info**
 enum PlayerInfoId
@@ -161,12 +141,13 @@ void setup()
   // setup ntp server
   tft.println("[NTP server]Setting up...");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  StartTimer(timerNTP, "timerNTP", 500, 0, NTPGetTime);
   tft.println("[NTP server]Done.");
 
   // setup dht11
   tft.println("[DHT11]Setting up...");
-  initTemp();
-  tasksEnabled = true;
+  dht.setup(dhtPin, DHTesp::DHT11);
+  StartTimer(timerDHT, "timerDHT", 5000, 1, DHTGetTempAndHumi);
   tft.println("[DHT11]Done.");
 
   // setup complete
@@ -175,11 +156,50 @@ void setup()
   ClearScreen(0, 160, 5);
 }
 
-void loop()
+void DHTGetTempAndHumi(TimerHandle_t xTimer)
+{
+  // Reading temperature for humidity takes about 250 milliseconds!
+  // Sensor readings may also be up to 2 seconds 'old' (it's a very slow sensor)
+  TempAndHumidity newValues = dht.getTempAndHumidity();
+  // Check if any reads failed and exit early (to try again).
+  if (dht.getStatus() != 0)
+  {
+    tft.println("[DHT11]Error status: " + String(dht.getStatusString()));
+  }
+
+  float heatIndex = dht.computeHeatIndex(newValues.temperature, newValues.humidity);
+  temperature = newValues.temperature;
+  humidity = newValues.humidity;
+}
+
+void StartTimer(TimerHandle_t &timer, char timerName[], int timerInterval, int timerId, TimerCallbackFunction_t function)
+{
+  // create timer
+  timer = xTimerCreate(
+      timerName,
+      pdMS_TO_TICKS(timerInterval),
+      pdTRUE,
+      (void *)timerId,
+      function);
+
+  // start timer to get ntp time info
+  xTimerStart(timer, 0);
+}
+
+void StopTimer(TimerHandle_t &timer)
+{
+  xTimerStop(timer, 0);
+  xTimerDelete(timer, 0);
+}
+
+void NTPGetTime(TimerHandle_t xTimer)
 {
   // get time info
   getLocalTime(&timeinfo);
+}
 
+void loop()
+{
   // get serial data
   serialData = Serial.readStringUntil('\n');
 
@@ -607,125 +627,6 @@ void TFTPrintPlayerSongDuration()
   }
 }
 
-size_t utf8len(char *s)
-{
-  size_t len = 0;
-  for (; *s; ++s)
-    if ((*s & 0xC0) != 0x80)
-      ++len;
-  return len;
-}
-
-char *utf8index(char *s, size_t pos)
-{
-  ++pos;
-  for (; *s; ++s)
-  {
-    if ((*s & 0xC0) != 0x80)
-      --pos;
-    if (pos == 0)
-      return s;
-  }
-  return NULL;
-}
-
-/**
-   initTemp
-   Setup DHT library
-   Setup task and timer for repeated measurement
-   @return bool
-      true if task and timer are started
-      false if task or timer couldn't be started
-*/
-bool initTemp()
-{
-  byte resultValue = 0;
-  // Initialize temperature sensor
-  dht.setup(dhtPin, DHTesp::DHT11);
-  tft.println("[DHT11]Initiated.");
-
-  // Start task to get temperature
-  xTaskCreatePinnedToCore(
-      DHTTask,        /* Function to implement the task */
-      "DHTTask ",     /* Name of the task */
-      4000,           /* Stack size in words */
-      NULL,           /* Task input parameter */
-      5,              /* Priority of the task */
-      &dhtTaskHandle, /* Task handle. */
-      1);             /* Core where the task should run */
-
-  if (dhtTaskHandle == NULL)
-  {
-    tft.println("[DHT11]Failed to start task for temperature update");
-    return false;
-  }
-  else
-  {
-    // Start update of environment data every XX seconds
-    dhtTicker.attach(dhtUpdateDuration, TriggerGetDHT);
-  }
-  getTemperature();
-  return true;
-}
-
-/**
-   triggerGetTemp
-   Sets flag dhtUpdated to true for handling in loop()
-   called by Ticker getTempTimer
-*/
-void TriggerGetDHT()
-{
-  if (dhtTaskHandle != NULL)
-  {
-    xTaskResumeFromISR(dhtTaskHandle);
-  }
-}
-
-/**
-   Task to reads temperature from DHT11 sensor
-   @param pvParameters
-      pointer to task parameters
-*/
-void DHTTask(void *pvParameters)
-{
-  tft.println("[DHT11]Starts to get value.");
-  while (1) // tempTask loop
-  {
-    if (tasksEnabled)
-    {
-      // Get temperature values
-      getTemperature();
-    }
-    // Got sleep again
-    vTaskSuspend(NULL);
-  }
-}
-
-/**
-   getTemperature
-   Reads temperature from DHT11 sensor
-   @return bool
-      true if temperature could be aquired
-      false if aquisition failed
-*/
-bool getTemperature()
-{
-  // Reading temperature for humidity takes about 250 milliseconds!
-  // Sensor readings may also be up to 2 seconds 'old' (it's a very slow sensor)
-  TempAndHumidity newValues = dht.getTempAndHumidity();
-  // Check if any reads failed and exit early (to try again).
-  if (dht.getStatus() != 0)
-  {
-    tft.println("[DHT11]Error status: " + String(dht.getStatusString()));
-    return false;
-  }
-
-  float heatIndex = dht.computeHeatIndex(newValues.temperature, newValues.humidity);
-  temperature = newValues.temperature;
-  humidity = newValues.humidity;
-  return true;
-}
-
 void PlayerInfoUpdate(PlayerInfoId infoId, String value)
 {
   switch (infoId)
@@ -774,6 +675,28 @@ void PlayerInfoUpdate(PlayerInfoId infoId, String value)
   default:
     break;
   }
+}
+
+size_t utf8len(char *s)
+{
+  size_t len = 0;
+  for (; *s; ++s)
+    if ((*s & 0xC0) != 0x80)
+      ++len;
+  return len;
+}
+
+char *utf8index(char *s, size_t pos)
+{
+  ++pos;
+  for (; *s; ++s)
+  {
+    if ((*s & 0xC0) != 0x80)
+      --pos;
+    if (pos == 0)
+      return s;
+  }
+  return NULL;
 }
 
 void ClearScreen(int startPoint, int endPoint, int perUnit)
