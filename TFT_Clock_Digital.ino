@@ -2,6 +2,8 @@
 #include "Fonts/Custom/Silver_16.h"
 #include <SPI.h>
 #include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
 #include "time.h"
 #include "DHTesp.h"
 #include <queue>
@@ -71,6 +73,9 @@ float humidityPrevious = -1;
 
 //**Open weather data**
 String openWeatherApiKey = String(OPEN_WEATHER_DATA_API_KEY);
+String openWeatherUrl = "https://opendata.cwb.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization=" + openWeatherApiKey + "&limit=1&format=JSON&stationId=C0AI30&elementName=TEMP,HUMD";
+float temperatureOpenWeather = 0;
+float humidityOpenWeather = 0;
 //**Open weather data**
 
 //**Player info**
@@ -208,12 +213,14 @@ void ChangeScreenState(ScreenState targetScreenState)
   case MainScreen:
     StartTimer("timerNTP", 500, NTPGetTime);
     StartTimer("timerDHT", 5000, DHTGetTempAndHumi);
-    
-    tft.setTextColor(0xFFFF, TFT_BLACK);
-    // print temperature title
-    tft.drawString("Temperature ", xpos + 10, ypos + 80, 2);
-    // print humidity title
-    tft.drawString("Humidity     ", xpos + 10, ypos + 100, 2);
+
+    // tft.setTextColor(0xFFFF, TFT_BLACK);
+    // // print temperature title
+    // tft.drawString("Temperature ", xpos + 10, ypos + 80, 2);
+    // // print humidity title
+    // tft.drawString("Humidity     ", xpos + 10, ypos + 100, 2);
+
+    OpenWeatherGetInfo();
 
     // force print temperature
     tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
@@ -308,6 +315,49 @@ void DHTGetTempAndHumi(TimerHandle_t xTimer)
 
   // print dht info
   TFTPrintDHTInfo();
+}
+
+void OpenWeatherGetInfo()
+{
+  // Make an HTTP request
+  HTTPClient http;
+  http.begin(openWeatherUrl); // replace with your URL
+  int httpCode = http.GET();
+
+  // Parse the JSON response
+  if (httpCode == HTTP_CODE_OK)
+  {
+    String payload = http.getString();
+    DynamicJsonDocument doc(2048);
+    deserializeJson(doc, payload);
+    JsonArray weatherElement = doc["records"]["location"][0]["weatherElement"];
+    for (JsonObject obj : weatherElement)
+    {
+      String elementName = obj["elementName"].as<String>();
+      if (elementName == "TEMP")
+      {
+        temperatureOpenWeather = obj["elementValue"].as<float>();
+      }
+      else if (elementName == "HUMD")
+      {
+        humidityOpenWeather = obj["elementValue"].as<float>() * 100;
+      }
+    }
+
+    // force print temperature
+    tft.setTextColor(TextColorByTemperature(temperatureOpenWeather), TFT_BLACK);
+    tft.drawString(String(temperatureOpenWeather, 1) + "C", xpos + 20, ypos + 80, 2);
+    // force print humidity
+    tft.setTextColor(TextColorByHumidity(humidityOpenWeather), TFT_BLACK);
+    tft.drawString(String(humidityOpenWeather, 1) + "%", xpos + 20, ypos + 100, 2);
+  }
+  else
+  {
+    Serial.println("Error getting JSON data");
+  }
+
+  // Turn off http client
+  http.end();
 }
 
 void PlayerInfoUpdate(PlayerInfoId infoId, String value)
