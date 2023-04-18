@@ -5,6 +5,7 @@
 #include "time.h"
 #include "DHTesp.h"
 #include <queue>
+#include "secrets.h"
 
 using namespace std;
 
@@ -67,6 +68,10 @@ float humidity = 0;
 float temperaturePrevious = -1;
 float humidityPrevious = -1;
 //**DHT**
+
+//**Open weather data**
+String openWeatherApiKey = String(OPEN_WEATHER_DATA_API_KEY);
+//**Open weather data**
 
 //**Player info**
 enum PlayerInfoId
