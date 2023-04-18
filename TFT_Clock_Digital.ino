@@ -155,7 +155,6 @@ void setup()
 
   // setup complete
   tft.println("[System]Welcome!");
-  delay(5000);
   ChangeScreenState(MainScreen);
 }
 
