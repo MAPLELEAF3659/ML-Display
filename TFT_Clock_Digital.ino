@@ -4,6 +4,9 @@
 #include <WiFi.h>
 #include "time.h"
 #include "DHTesp.h"
+#include <queue>
+
+using namespace std;
 
 /*
 **Upload settings**
@@ -19,7 +22,6 @@ const char *password = "95089608";
 //**WiFi**
 
 //**NTP**
-TimerHandle_t timerNTP;
 const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 28800; // GMT+8
 const int daylightOffset_sec = 0;
@@ -59,7 +61,6 @@ DHTesp dht;
 int dhtPin = 17; // VCC=5V
 // Update duration
 int dhtUpdateInterval = 5000; // ms
-TimerHandle_t timerDHT;
 // DHT info
 float temperature = 0;
 float humidity = 0;
@@ -105,6 +106,10 @@ String songCurrentLyric = "";
 int songMetadataYPosOffset = 53;
 //**Player info**
 
+//**Timer**
+queue<TimerHandle_t> timers;
+//**Timer**
+
 enum ScreenState
 {
   NoneScreen = -1,
@@ -141,61 +146,16 @@ void setup()
   // setup ntp server
   tft.println("[NTP server]Setting up...");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-  StartTimer(timerNTP, "timerNTP", 500, 1, NTPGetTime);
   tft.println("[NTP server]Done.");
 
   // setup dht11
   tft.println("[DHT11]Setting up...");
   dht.setup(dhtPin, DHTesp::DHT11);
-  StartTimer(timerDHT, "timerDHT", 5000, 2, DHTGetTempAndHumi);
   tft.println("[DHT11]Done.");
 
   // setup complete
   tft.println("[System]Welcome!");
-  delay(5000);
   ChangeScreenState(MainScreen);
-}
-
-void DHTGetTempAndHumi(TimerHandle_t xTimer)
-{
-  // Reading temperature for humidity takes about 250 milliseconds!
-  // Sensor readings may also be up to 2 seconds 'old' (it's a very slow sensor)
-  TempAndHumidity newValues = dht.getTempAndHumidity();
-  // Check if any reads failed and exit early (to try again).
-  if (dht.getStatus() != 0)
-  {
-    Serial.println("[DHT11]Error status: " + String(dht.getStatusString()));
-  }
-
-  float heatIndex = dht.computeHeatIndex(newValues.temperature, newValues.humidity);
-  temperature = newValues.temperature;
-  humidity = newValues.humidity;
-}
-
-void StartTimer(TimerHandle_t &timer, char timerName[], int timerInterval, int timerId, TimerCallbackFunction_t function)
-{
-  // create timer
-  timer = xTimerCreate(
-      timerName,
-      pdMS_TO_TICKS(timerInterval),
-      pdTRUE,
-      (void *)timerId,
-      function);
-
-  // start timer to get ntp time info
-  xTimerStart(timer, 0);
-}
-
-void StopTimer(TimerHandle_t &timer)
-{
-  xTimerStop(timer, 0);
-  xTimerDelete(timer, 0);
-}
-
-void NTPGetTime(TimerHandle_t xTimer)
-{
-  // get time info
-  getLocalTime(&timeinfo);
 }
 
 void loop()
@@ -216,17 +176,6 @@ void loop()
       break;
     }
   }
-
-  // show screen by screenState
-  switch (screenState)
-  {
-  case MainScreen:
-    ShowMainScreen();
-    break;
-  case PlayerScreen:
-    ShowPlayerScreen();
-    break;
-  }
 }
 
 void ChangeScreenState(ScreenState targetScreenState)
@@ -236,7 +185,11 @@ void ChangeScreenState(ScreenState targetScreenState)
     return;
   }
 
+  // update screen state
   screenState = targetScreenState;
+
+  // stop all timers
+  StopAllTimer();
 
   // force clear screen and previous states when screenState changed
   ClearScreen(0, 160, 5);
@@ -248,21 +201,24 @@ void ChangeScreenState(ScreenState targetScreenState)
   switch (screenState)
   {
   case MainScreen:
-    // **force print dht info
+    StartTimer("timerNTP", 500, NTPGetTime);
+    StartTimer("timerDHT", 5000, DHTGetTempAndHumi);
+    
     tft.setTextColor(0xFFFF, TFT_BLACK);
-    // write temperature title
-    tft.drawString("Temperature " + String(temperature < 10 ? "0" : ""), xpos + 10, ypos + 80, 2);
-    // write humidity title
-    tft.drawString("Humidity     " + String(humidity < 10 ? "0" : ""), xpos + 10, ypos + 100, 2);
-    // write temperature
+    // print temperature title
+    tft.drawString("Temperature ", xpos + 10, ypos + 80, 2);
+    // print humidity title
+    tft.drawString("Humidity     ", xpos + 10, ypos + 100, 2);
+
+    // force print temperature
     tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
     tft.drawString(String(temperature, 1) + "C", xpos + 95, ypos + 80, 2);
-    // write humidity
+    // force print humidity
     tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
     tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
-
     break;
   case PlayerScreen:
+    StartTimer("timerNTP", 500, NTPGetTime);
     TFTPrintPlayerState();
     TFTPrintPlayerSongDuration();
     TFTPrintPlayerSongPosition();
@@ -271,10 +227,39 @@ void ChangeScreenState(ScreenState targetScreenState)
   }
 }
 
-void ShowMainScreen()
+void StartTimer(char timerName[], int timerInterval, TimerCallbackFunction_t function)
 {
+  // create timer
+  TimerHandle_t timer = xTimerCreate(
+      timerName,
+      pdMS_TO_TICKS(timerInterval),
+      pdTRUE,
+      (void *)timers.size(),
+      function);
+
+  timers.push(timer);
+
+  // start timer to get ntp time info
+  xTimerStart(timer, 0);
+}
+
+void StopAllTimer()
+{
+  while (timers.size() > 0)
+  {
+    xTimerStop(timers.front(), 0);
+    xTimerDelete(timers.front(), 0);
+    timers.pop();
+  }
+}
+
+void NTPGetTime(TimerHandle_t xTimer)
+{
+  // get time info
+  getLocalTime(&timeinfo);
+
   // update by day
-  if (timeinfo.tm_mday != dayPrevious)
+  if (screenState == MainScreen & timeinfo.tm_mday != dayPrevious)
   {
     TFTPrintDate();
     dayPrevious = timeinfo.tm_mday;
@@ -291,40 +276,33 @@ void ShowMainScreen()
   // update by sec
   if (timeinfo.tm_sec != secPrevious)
   {
-    // print ":" (blink it)
-    tft.setTextColor(0x39C4, TFT_BLACK);
-    tft.drawString(":", 74, ypos, 7);
-    tft.setTextColor(0xFFFF);
-    tft.drawChar(timeinfo.tm_sec % 2 == 0 ? ':' : ' ', 74, ypos, 7);
-
-    // print dht info
-    TFTPrintDHTInfo();
+    // blink ":"
+    TFTPrintSecBlink();
 
     // update previous state
     secPrevious = timeinfo.tm_sec;
   }
 }
 
-void ShowPlayerScreen()
+void DHTGetTempAndHumi(TimerHandle_t xTimer)
 {
-  // update by min
-  if (timeinfo.tm_min != minPrevious)
+  // Reading temperature for humidity takes about 250 milliseconds!
+  // Sensor readings may also be up to 2 seconds 'old' (it's a very slow sensor)
+  TempAndHumidity newValues = dht.getTempAndHumidity();
+  // Check if any reads failed and exit early (to try again).
+  if (dht.getStatus() != 0)
   {
-    TFTPrintTime();
-    // update previous state
-    minPrevious = timeinfo.tm_min;
+    Serial.println("[DHT11]Error status: " + String(dht.getStatusString()));
+    return;
   }
 
-  // update by sec
-  if (timeinfo.tm_sec != secPrevious)
-  {
-    // blink ":"
-    tft.setTextColor(0xFFFF, TFT_BLACK);
-    tft.drawChar(timeinfo.tm_sec % 2 == 0 ? ':' : ' ', 142, 123, 1);
+  // update dht info
+  float heatIndex = dht.computeHeatIndex(newValues.temperature, newValues.humidity);
+  temperature = newValues.temperature;
+  humidity = newValues.humidity;
 
-    // update previous state
-    secPrevious = timeinfo.tm_sec;
-  }
+  // print dht info
+  TFTPrintDHTInfo();
 }
 
 void PlayerInfoUpdate(PlayerInfoId infoId, String value)
@@ -415,6 +393,24 @@ void TFTPrintTime()
     tft.drawString((timeinfo.tm_hour < 10 ? "0" : "") + String(timeinfo.tm_hour) + " " +
                        (timeinfo.tm_min < 10 ? "0" : "") + String(timeinfo.tm_min),
                    130, 123, 1);
+  }
+}
+
+void TFTPrintSecBlink()
+{
+  // print ":" (blink it)
+  switch (screenState)
+  {
+  case MainScreen:
+    tft.setTextColor(0x39C4, TFT_BLACK);
+    tft.drawString(":", 74, ypos, 7);
+    tft.setTextColor(0xFFFF);
+    tft.drawChar(timeinfo.tm_sec % 2 == 0 ? ':' : ' ', 74, ypos, 7);
+    break;
+  case PlayerScreen:
+    tft.setTextColor(0xFFFF, TFT_BLACK);
+    tft.drawChar(timeinfo.tm_sec % 2 == 0 ? ':' : ' ', 142, 123, 1);
+    break;
   }
 }
 
