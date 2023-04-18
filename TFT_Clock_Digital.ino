@@ -80,7 +80,8 @@ enum PlayerInfoId
   Codec,
   Duration,
   Position,
-  PlaybackState
+  PlaybackState,
+  LyricCurrent
 };
 enum PlayerState
 {
@@ -99,8 +100,9 @@ String songBitDepth = "0";
 String songBitrate = "0";
 String songSampleRate = "0";
 String songCodec = "";
+String songCurrentLyric = "";
 // for tft print
-int songMetadataYPosOffset = 75;
+int songMetadataYPosOffset = 53;
 //**Player info**
 
 enum ScreenState
@@ -261,15 +263,10 @@ void ChangeScreenState(ScreenState targetScreenState)
 
     break;
   case PlayerScreen:
-    // draw upper bar(time&date) background
-    tft.setTextColor(0xFFFF, upperBarBackgroundColor);
-    tft.drawString("                   ", 0, 0, 2);
-
     TFTPrintPlayerState();
     TFTPrintPlayerSongDuration();
     TFTPrintPlayerSongPosition();
     TFTPrintPlayerSongGeneralInfo();
-
     break;
   }
 }
@@ -310,13 +307,6 @@ void ShowMainScreen()
 
 void ShowPlayerScreen()
 {
-  // update by day
-  if (timeinfo.tm_mday != dayPrevious)
-  {
-    TFTPrintDate();
-    dayPrevious = timeinfo.tm_mday;
-  }
-
   // update by min
   if (timeinfo.tm_min != minPrevious)
   {
@@ -329,8 +319,8 @@ void ShowPlayerScreen()
   if (timeinfo.tm_sec != secPrevious)
   {
     // blink ":"
-    tft.setTextColor(0xFFFF, upperBarBackgroundColor);
-    tft.drawChar(timeinfo.tm_sec % 2 == 0 ? ':' : ' ', 17, 5, 1);
+    tft.setTextColor(0xFFFF, TFT_BLACK);
+    tft.drawChar(timeinfo.tm_sec % 2 == 0 ? ':' : ' ', 142, 123, 1);
 
     // update previous state
     secPrevious = timeinfo.tm_sec;
@@ -392,6 +382,10 @@ void PlayerInfoUpdate(PlayerInfoId infoId, String value)
     }
     TFTPrintPlayerState();
     break;
+  case LyricCurrent:
+    songCurrentLyric = value;
+    TFTPrintPlayerSongCurrentLyric();
+    break;
   default:
     break;
   }
@@ -417,56 +411,45 @@ void TFTPrintTime()
   }
   else
   {
-    tft.setTextColor(0xFFFF, upperBarBackgroundColor);
+    tft.setTextColor(0xFFFF, TFT_BLACK);
     tft.drawString((timeinfo.tm_hour < 10 ? "0" : "") + String(timeinfo.tm_hour) + " " +
                        (timeinfo.tm_min < 10 ? "0" : "") + String(timeinfo.tm_min),
-                   1, 0, 2);
+                   130, 123, 1);
   }
 }
 
 void TFTPrintDate()
 {
-  if (screenState == MainScreen)
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  String dayOfWeekStr;
+  switch (timeinfo.tm_wday)
   {
-    tft.setTextColor(0xFFFF, TFT_BLACK);
-    String dayOfWeekStr;
-    switch (timeinfo.tm_wday)
-    {
-    case 0:
-      dayOfWeekStr = "SUN.";
-      break;
-    case 1:
-      dayOfWeekStr = "MON.";
-      break;
-    case 2:
-      dayOfWeekStr = "TUE.";
-      break;
-    case 3:
-      dayOfWeekStr = "WED.";
-      break;
-    case 4:
-      dayOfWeekStr = "THU.";
-      break;
-    case 5:
-      dayOfWeekStr = "FRI.";
-      break;
-    case 6:
-      dayOfWeekStr = "SAT.";
-      break;
-    }
-    tft.drawString("    " + String(timeinfo.tm_year + 1900) + "/" +
-                       (timeinfo.tm_mon < 9 ? "0" : "") + String(timeinfo.tm_mon + 1) + "/" +
-                       (timeinfo.tm_mday < 10 ? "0" : "") + String(timeinfo.tm_mday) + " " + dayOfWeekStr + "  ",
-                   0, ypos + 58, 2);
+  case 0:
+    dayOfWeekStr = "SUN.";
+    break;
+  case 1:
+    dayOfWeekStr = "MON.";
+    break;
+  case 2:
+    dayOfWeekStr = "TUE.";
+    break;
+  case 3:
+    dayOfWeekStr = "WED.";
+    break;
+  case 4:
+    dayOfWeekStr = "THU.";
+    break;
+  case 5:
+    dayOfWeekStr = "FRI.";
+    break;
+  case 6:
+    dayOfWeekStr = "SAT.";
+    break;
   }
-  else
-  {
-    tft.setTextColor(0xFFFF, upperBarBackgroundColor);
-    tft.drawString(String(timeinfo.tm_year + 1900) + "/" +
-                       (timeinfo.tm_mon < 9 ? "0" : "") + String(timeinfo.tm_mon + 1) + "/" +
-                       (timeinfo.tm_mday < 10 ? "0" : "") + String(timeinfo.tm_mday),
-                   83, 0, 2);
-  }
+  tft.drawString("    " + String(timeinfo.tm_year + 1900) + "/" +
+                     (timeinfo.tm_mon < 9 ? "0" : "") + String(timeinfo.tm_mon + 1) + "/" +
+                     (timeinfo.tm_mday < 10 ? "0" : "") + String(timeinfo.tm_mday) + " " + dayOfWeekStr + "  ",
+                 0, ypos + 58, 2);
 }
 
 void TFTPrintDHTInfo()
@@ -548,47 +531,38 @@ int TextColorByHumidity(float humi)
   }
 }
 
-void TFTPrintPlayerSongMetadata(String value, int lineIndex)
+void TFTPrintPlayerState()
 {
-  // set color
+  // clear player state screen area
   tft.setTextColor(0xFFFF, TFT_BLACK);
-
-  // clear screen
-  tft.drawString("                            ", xpos, ypos + songMetadataYPosOffset - 2 + lineIndex * 15, 2);
-
-  // load han character
-  tft.loadFont(Silver_16);
-
-  // print artist/album/title name
-  tft.drawString(value, xpos, ypos + songMetadataYPosOffset + lineIndex * 15);
-
-  // unload han character
-  tft.unloadFont();
-}
-
-void TFTPrintPlayerSongGeneralInfo()
-{
-  // clear song general info screen area
-  tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString("                             ", 0, 67, 1);
-  // print song general info
-  float sampleRateF = songSampleRate.toFloat() / 1000;
-  tft.drawString(songBitDepth + "bits " +
-                     String(sampleRateF, 1) + "kHz " +
-                     songBitrate + "kbps",
-                 xpos, 67, 1);
+  tft.drawString("           ", xpos, 5, 2);
+  switch (playerState)
+  {
+  case 0:
+    tft.setTextColor(0x07E0, TFT_BLACK);
+    tft.drawString("Playing >", xpos, 5, 2);
+    break;
+  case 1:
+    tft.setTextColor(0x001F, TFT_BLACK);
+    tft.drawString("Pause ||", xpos, 5, 2);
+    break;
+  case 2:
+    tft.setTextColor(0xF800, TFT_BLACK);
+    tft.drawString("Stop []", xpos, 5, 2);
+    break;
+  }
 }
 
 void TFTPrintPlayerSongCodec()
 {
   // clear song codec screen area
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString("            ", xpos + 80, 20, 2);
+  tft.drawString("            ", xpos + 80, 5, 2);
 
   tft.setTextColor(0xFFFF, TextBackgroundColorByCodec(songCodec));
   // print song codec
   int xposCodec = xpos + 120;
-  tft.drawString(" " + songCodec + " ", xposCodec + (songCodec.length() * -5.2), 20, 2);
+  tft.drawString(" " + songCodec + " ", xposCodec + (songCodec.length() * -5.2), 5, 2);
 }
 
 int TextBackgroundColorByCodec(String codecStr)
@@ -615,28 +589,6 @@ int TextBackgroundColorByCodec(String codecStr)
   }
 }
 
-void TFTPrintPlayerState()
-{
-  // clear player state screen area
-  tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString("           ", xpos, 20, 2);
-  switch (playerState)
-  {
-  case 0:
-    tft.setTextColor(0x07E0, TFT_BLACK);
-    tft.drawString("Playing >", xpos, 20, 2);
-    break;
-  case 1:
-    tft.setTextColor(0x001F, TFT_BLACK);
-    tft.drawString("Pause ||", xpos, 20, 2);
-    break;
-  case 2:
-    tft.setTextColor(0xF800, TFT_BLACK);
-    tft.drawString("Stop []", xpos, 20, 2);
-    break;
-  }
-}
-
 void TFTPrintPlayerSongDuration()
 {
   // set color
@@ -645,7 +597,7 @@ void TFTPrintPlayerSongDuration()
   // print duration in 00:00 format
   tft.drawString(((songDuration / 60 < 10) ? "0" : "") + String(songDuration / 60) + ":" +
                      ((songDuration % 60 < 10) ? "0" : "") + String(songDuration % 60),
-                 xpos + 113, 42, 1);
+                 xpos + 113, 27, 1);
 }
 
 void TFTPrintPlayerSongPosition()
@@ -656,15 +608,61 @@ void TFTPrintPlayerSongPosition()
   // print position in 00:00 format
   tft.drawString(((songPostion / 60) < 10 ? "0" : "") + String(songPostion / 60) + ":" +
                      ((songPostion % 60) < 10 ? "0" : "") + String(songPostion % 60),
-                 xpos, 42, 1);
+                 xpos, 27, 1);
 
   // draw position bar
   int xposSong = xpos;
   int xIndexPlayingPosition = map(((float)songPostion / (float)songDuration) * 100, 0, 100, 0, 23);
   for (int i = 0; i < 24; i++)
   {
-    xposSong += tft.drawString(i == xIndexPlayingPosition ? "+" : "-", xposSong, 52, 1);
+    xposSong += tft.drawString(i == xIndexPlayingPosition ? "+" : "-", xposSong, 37, 1);
   }
+}
+
+void TFTPrintPlayerSongGeneralInfo()
+{
+  // clear song general info screen area
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString("                             ", 0, 49, 1);
+
+  // print song general info
+  float sampleRateF = songSampleRate.toFloat() / 1000;
+  tft.drawString(songBitDepth + "bits " +
+                     String(sampleRateF, 1) + "kHz " +
+                     songBitrate + "kbps",
+                 xpos, 49, 1);
+}
+
+void TFTPrintPlayerSongMetadata(String value, int lineIndex)
+{
+  // clear screen
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString("                               ", 0, ypos + songMetadataYPosOffset - 2 + lineIndex * 15, 2);
+
+  // load han character
+  tft.loadFont(Silver_16);
+
+  // print artist/album/title name
+  tft.drawString(value, xpos, ypos + songMetadataYPosOffset + lineIndex * 15);
+
+  // unload han character
+  tft.unloadFont();
+}
+
+void TFTPrintPlayerSongCurrentLyric()
+{
+  // clear screen
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString("                               ", 0, 107, 2);
+
+  // load han character
+  tft.loadFont(Silver_16);
+
+  // print lyric
+  tft.drawString(songCurrentLyric, xpos, 110);
+
+  // unload han character
+  tft.unloadFont();
 }
 
 size_t utf8len(char *s)
