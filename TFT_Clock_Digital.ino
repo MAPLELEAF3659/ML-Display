@@ -212,22 +212,20 @@ void ChangeScreenState(ScreenState targetScreenState)
   {
   case MainScreen:
     StartTimer("timerNTP", 500, NTPGetTime);
+
+    DHTGetTempAndHumi(new TimerHandle_t); // run once at start
     StartTimer("timerDHT", 5000, DHTGetTempAndHumi);
-
-    // tft.setTextColor(0xFFFF, TFT_BLACK);
-    // // print temperature title
-    // tft.drawString("Temperature ", xpos + 10, ypos + 80, 2);
-    // // print humidity title
-    // tft.drawString("Humidity     ", xpos + 10, ypos + 100, 2);
-
-    OpenWeatherGetInfo();
-
+    
     // force print temperature
     tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
     tft.drawString(String(temperature, 1) + "C", xpos + 95, ypos + 80, 2);
     // force print humidity
     tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
     tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
+
+    OpenWeatherGetInfo(new TimerHandle_t); // run once at start
+    StartTimer("timerOpenWeather", 3600000, OpenWeatherGetInfo);
+
     break;
   case PlayerScreen:
     StartTimer("timerNTP", 500, NTPGetTime);
@@ -317,16 +315,16 @@ void DHTGetTempAndHumi(TimerHandle_t xTimer)
   TFTPrintDHTInfo();
 }
 
-void OpenWeatherGetInfo()
+void OpenWeatherGetInfo(TimerHandle_t xTimer)
 {
   // Make an HTTP request
   HTTPClient http;
   http.begin(openWeatherUrl); // replace with your URL
   int httpCode = http.GET();
 
-  // Parse the JSON response
   if (httpCode == HTTP_CODE_OK)
   {
+    // Parse the JSON response
     String payload = http.getString();
     DynamicJsonDocument doc(2048);
     deserializeJson(doc, payload);
@@ -344,12 +342,8 @@ void OpenWeatherGetInfo()
       }
     }
 
-    // force print temperature
-    tft.setTextColor(TextColorByTemperature(temperatureOpenWeather), TFT_BLACK);
-    tft.drawString(String(temperatureOpenWeather, 1) + "C", xpos + 20, ypos + 80, 2);
-    // force print humidity
-    tft.setTextColor(TextColorByHumidity(humidityOpenWeather), TFT_BLACK);
-    tft.drawString(String(humidityOpenWeather, 1) + "%", xpos + 20, ypos + 100, 2);
+    // print open weather temp/humd info
+    TFTPrintOpenWeatherInfo();
   }
   else
   {
@@ -524,6 +518,16 @@ void TFTPrintDHTInfo()
     // update pervious state
     humidityPrevious = humidity;
   }
+}
+
+void TFTPrintOpenWeatherInfo()
+{
+  // print temperature
+  tft.setTextColor(TextColorByTemperature(temperatureOpenWeather), TFT_BLACK);
+  tft.drawString(String(temperatureOpenWeather, 1) + "C", xpos + 15, ypos + 80, 2);
+  // print humidity
+  tft.setTextColor(TextColorByHumidity(humidityOpenWeather), TFT_BLACK);
+  tft.drawString(String(humidityOpenWeather, 1) + "%", xpos + 15, ypos + 100, 2);
 }
 
 int TextColorByTemperature(float temp)
