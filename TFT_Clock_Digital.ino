@@ -4,6 +4,9 @@
 #include <WiFi.h>
 #include "time.h"
 #include "DHTesp.h"
+#include <queue>
+
+using namespace std;
 
 /*
 **Upload settings**
@@ -19,7 +22,6 @@ const char *password = "95089608";
 //**WiFi**
 
 //**NTP**
-TimerHandle_t timerNTP;
 const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 28800; // GMT+8
 const int daylightOffset_sec = 0;
@@ -59,7 +61,6 @@ DHTesp dht;
 int dhtPin = 17; // VCC=5V
 // Update duration
 int dhtUpdateInterval = 5000; // ms
-TimerHandle_t timerDHT;
 // DHT info
 float temperature = 0;
 float humidity = 0;
@@ -105,6 +106,10 @@ String songCurrentLyric = "";
 int songMetadataYPosOffset = 53;
 //**Player info**
 
+//**Timer**
+queue<TimerHandle_t> timers;
+//**Timer**
+
 enum ScreenState
 {
   NoneScreen = -1,
@@ -141,19 +146,51 @@ void setup()
   // setup ntp server
   tft.println("[NTP server]Setting up...");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-  StartTimer(timerNTP, "timerNTP", 500, 1, NTPGetTime);
+  StartTimer("timerNTP", 500, NTPGetTime);
   tft.println("[NTP server]Done.");
 
   // setup dht11
   tft.println("[DHT11]Setting up...");
   dht.setup(dhtPin, DHTesp::DHT11);
-  StartTimer(timerDHT, "timerDHT", 5000, 2, DHTGetTempAndHumi);
+  StartTimer("timerDHT", 5000, DHTGetTempAndHumi);
   tft.println("[DHT11]Done.");
 
   // setup complete
   tft.println("[System]Welcome!");
   delay(5000);
   ChangeScreenState(MainScreen);
+}
+
+void StartTimer(char timerName[], int timerInterval, TimerCallbackFunction_t function)
+{
+  // create timer
+  TimerHandle_t timer = xTimerCreate(
+      timerName,
+      pdMS_TO_TICKS(timerInterval),
+      pdTRUE,
+      (void *)timers.size(),
+      function);
+
+  timers.push(timer);
+
+  // start timer to get ntp time info
+  xTimerStart(timer, 0);
+}
+
+void StopAllTimer()
+{
+  while (timers.size() > 0)
+  {
+    xTimerStop(timers.front(), 0);
+    xTimerDelete(timers.front(), 0);
+    timers.pop();
+  }
+}
+
+void NTPGetTime(TimerHandle_t xTimer)
+{
+  // get time info
+  getLocalTime(&timeinfo);
 }
 
 void DHTGetTempAndHumi(TimerHandle_t xTimer)
@@ -170,32 +207,6 @@ void DHTGetTempAndHumi(TimerHandle_t xTimer)
   float heatIndex = dht.computeHeatIndex(newValues.temperature, newValues.humidity);
   temperature = newValues.temperature;
   humidity = newValues.humidity;
-}
-
-void StartTimer(TimerHandle_t &timer, char timerName[], int timerInterval, int timerId, TimerCallbackFunction_t function)
-{
-  // create timer
-  timer = xTimerCreate(
-      timerName,
-      pdMS_TO_TICKS(timerInterval),
-      pdTRUE,
-      (void *)timerId,
-      function);
-
-  // start timer to get ntp time info
-  xTimerStart(timer, 0);
-}
-
-void StopTimer(TimerHandle_t &timer)
-{
-  xTimerStop(timer, 0);
-  xTimerDelete(timer, 0);
-}
-
-void NTPGetTime(TimerHandle_t xTimer)
-{
-  // get time info
-  getLocalTime(&timeinfo);
 }
 
 void loop()
