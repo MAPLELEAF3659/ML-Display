@@ -213,6 +213,7 @@ void ChangeScreenState(ScreenState targetScreenState)
   case MainScreen:
     StartTimer("timerNTP", 500, NTPGetTime);
 
+    // print titles
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.drawString("Indoor", xpos + 5, ypos + 85, 1);
     tft.drawString("Outdoor", xpos + 5, ypos + 105, 1);
@@ -226,8 +227,7 @@ void ChangeScreenState(ScreenState targetScreenState)
     tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
     tft.drawString(String(humidity, 1) + "%", xpos + 100, ypos + 80, 2);
 
-    OpenWeatherGetInfo(new TimerHandle_t); // run once at start
-    StartTimer("timerOpenWeather", 3600000, OpenWeatherGetInfo);
+    OpenWeatherGetInfo(); // run once at start
 
     break;
   case PlayerScreen:
@@ -272,16 +272,27 @@ void NTPGetTime(TimerHandle_t xTimer)
   getLocalTime(&timeinfo);
 
   // update by day
-  if (screenState == MainScreen & timeinfo.tm_mday != dayPrevious)
+  if (timeinfo.tm_mday != dayPrevious)
   {
-    TFTPrintDate();
+    if (screenState == MainScreen)
+    {
+      TFTPrintDate();
+    }
     dayPrevious = timeinfo.tm_mday;
   }
 
   // update by min
   if (timeinfo.tm_min != minPrevious)
   {
+    // print time hh:mm
     TFTPrintTime();
+    
+    // get open weather data every o'clock
+    if (timeinfo.tm_min % 60 == 0)
+    {
+      OpenWeatherGetInfo();
+    }
+
     // update previous state
     minPrevious = timeinfo.tm_min;
   }
@@ -318,7 +329,7 @@ void DHTGetTempAndHumi(TimerHandle_t xTimer)
   TFTPrintDHTInfo();
 }
 
-void OpenWeatherGetInfo(TimerHandle_t xTimer)
+void OpenWeatherGetInfo()
 {
   // Make an HTTP request
   HTTPClient http;
