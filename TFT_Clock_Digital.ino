@@ -2,9 +2,12 @@
 #include "Fonts/Custom/Silver_16.h"
 #include <SPI.h>
 #include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
 #include "time.h"
 #include "DHTesp.h"
 #include <queue>
+#include "secrets.h"
 
 using namespace std;
 
@@ -26,7 +29,7 @@ const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 28800; // GMT+8
 const int daylightOffset_sec = 0;
 struct tm timeinfo;
-byte secPrevious, minPrevious, dayPrevious;
+byte secPrevious, minPrevious, hourPrevious, dayPrevious;
 //**NTP**
 
 //**TFT**
@@ -67,6 +70,14 @@ float humidity = 0;
 float temperaturePrevious = -1;
 float humidityPrevious = -1;
 //**DHT**
+
+//**Open weather data**
+String openWeatherApiKey = String(OPEN_WEATHER_DATA_API_KEY);
+String openWeatherUrl = "https://opendata.cwb.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization=" + openWeatherApiKey + "&limit=1&format=JSON&stationId=C0AI30&elementName=TEMP,HUMD";
+float temperatureOpenWeather = 0;
+float humidityOpenWeather = 0;
+bool isOpenWeatherUpdated;
+//**Open weather data**
 
 //**Player info**
 enum PlayerInfoId
@@ -176,6 +187,12 @@ void loop()
       break;
     }
   }
+
+  if (screenState == MainScreen && !isOpenWeatherUpdated)
+  {
+    OpenWeatherGetInfo();
+    isOpenWeatherUpdated = true;
+  }
 }
 
 void ChangeScreenState(ScreenState targetScreenState)
@@ -201,21 +218,20 @@ void ChangeScreenState(ScreenState targetScreenState)
   switch (screenState)
   {
   case MainScreen:
-    StartTimer("timerNTP", 500, NTPGetTime);
-    StartTimer("timerDHT", 5000, DHTGetTempAndHumi);
-    
-    tft.setTextColor(0xFFFF, TFT_BLACK);
-    // print temperature title
-    tft.drawString("Temperature ", xpos + 10, ypos + 80, 2);
-    // print humidity title
-    tft.drawString("Humidity     ", xpos + 10, ypos + 100, 2);
+    tft.loadFont(Silver_16);
+    tft.drawString("三重", xpos + 60, ypos + 84);
+    tft.drawString("室內", xpos + 60, ypos + 102);
+    tft.unloadFont();
 
-    // force print temperature
-    tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
-    tft.drawString(String(temperature, 1) + "C", xpos + 95, ypos + 80, 2);
-    // force print humidity
-    tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
-    tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
+    OpenWeatherGetInfo(); // run once at start
+
+    temperaturePrevious = 0; // set temperature & humidity to 0 to force print
+    humidityPrevious = 0;
+    DHTGetTempAndHumi(new TimerHandle_t); // run once at start
+
+    StartTimer("timerNTP", 500, NTPGetTime);
+    StartTimer("timerWeather", 5000, DHTGetTempAndHumi);
+
     break;
   case PlayerScreen:
     StartTimer("timerNTP", 500, NTPGetTime);
@@ -259,16 +275,32 @@ void NTPGetTime(TimerHandle_t xTimer)
   getLocalTime(&timeinfo);
 
   // update by day
-  if (screenState == MainScreen & timeinfo.tm_mday != dayPrevious)
+  if (timeinfo.tm_mday != dayPrevious)
   {
-    TFTPrintDate();
+    if (screenState == MainScreen)
+    {
+      TFTPrintDate();
+    }
     dayPrevious = timeinfo.tm_mday;
+  }
+
+  // update by hour
+  if (timeinfo.tm_hour != hourPrevious)
+  {
+    if (screenState == MainScreen)
+    {
+      isOpenWeatherUpdated = false;
+    }
+
+    hourPrevious = timeinfo.tm_hour;
   }
 
   // update by min
   if (timeinfo.tm_min != minPrevious)
   {
+    // print time hh:mm
     TFTPrintTime();
+
     // update previous state
     minPrevious = timeinfo.tm_min;
   }
@@ -303,6 +335,45 @@ void DHTGetTempAndHumi(TimerHandle_t xTimer)
 
   // print dht info
   TFTPrintDHTInfo();
+}
+
+void OpenWeatherGetInfo()
+{
+  // Make an HTTP request
+  HTTPClient http;
+  http.begin(openWeatherUrl); // replace with your URL
+  int httpCode = http.GET();
+
+  if (httpCode == HTTP_CODE_OK)
+  {
+    // Parse the JSON response
+    String payload = http.getString();
+    DynamicJsonDocument doc(2048);
+    deserializeJson(doc, payload);
+    JsonArray weatherElement = doc["records"]["location"][0]["weatherElement"];
+    for (JsonObject obj : weatherElement)
+    {
+      String elementName = obj["elementName"].as<String>();
+      if (elementName == "TEMP")
+      {
+        temperatureOpenWeather = obj["elementValue"].as<float>();
+      }
+      else if (elementName == "HUMD")
+      {
+        humidityOpenWeather = obj["elementValue"].as<float>() * 100;
+      }
+    }
+
+    // print open weather temp/humd info
+    TFTPrintOpenWeatherInfo();
+  }
+  else
+  {
+    Serial.println("Error getting JSON data");
+  }
+
+  // Turn off http client
+  http.end();
 }
 
 void PlayerInfoUpdate(PlayerInfoId infoId, String value)
@@ -455,7 +526,7 @@ void TFTPrintDHTInfo()
   {
     tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
     // write temperature
-    tft.drawString(String(temperature, 1) + "C", xpos + 95, ypos + 80, 2);
+    tft.drawString(String(temperature, 1) + "C", xpos + 23, ypos + 102, 1);
     // update pervious state
     temperaturePrevious = temperature;
   }
@@ -465,10 +536,20 @@ void TFTPrintDHTInfo()
   {
     tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
     // write humidity
-    tft.drawString(String(humidity, 1) + "%", xpos + 95, ypos + 100, 2);
+    tft.drawString(String(humidity, 1) + "%", xpos + 89, ypos + 102, 1);
     // update pervious state
     humidityPrevious = humidity;
   }
+}
+
+void TFTPrintOpenWeatherInfo()
+{
+  // print temperature
+  tft.setTextColor(TextColorByTemperature(temperatureOpenWeather), TFT_BLACK);
+  tft.drawString(String(temperatureOpenWeather, 1) + "C", xpos + 16, ypos + 80, 2);
+  // print humidity
+  tft.setTextColor(TextColorByHumidity(humidityOpenWeather), TFT_BLACK);
+  tft.drawString(String(humidityOpenWeather, 1) + "%", xpos + 89, ypos + 80, 2);
 }
 
 int TextColorByTemperature(float temp)
