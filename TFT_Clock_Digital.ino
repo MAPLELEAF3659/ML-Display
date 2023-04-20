@@ -218,8 +218,6 @@ void ChangeScreenState(ScreenState targetScreenState)
   switch (screenState)
   {
   case MainScreen:
-    StartTimer("timerNTP", 500, NTPGetTime);
-
     // print titles
     tft.setTextColor(TFT_WHITE, TFT_BLACK);
     tft.drawString("Indoor", xpos + 5, ypos + 85, 1);
@@ -227,10 +225,11 @@ void ChangeScreenState(ScreenState targetScreenState)
 
     OpenWeatherGetInfo(); // run once at start
 
-    temperature = 0; // set temperature & humidity to 0 to force print
-    humidity = 0;
+    temperaturePrevious = 0; // set temperature & humidity to 0 to force print
+    humidityPrevious = 0;
     DHTGetTempAndHumi(new TimerHandle_t); // run once at start
 
+    StartTimer("timerNTP", 500, NTPGetTime);
     StartTimer("timerWeather", 5000, DHTGetTempAndHumi);
 
     break;
