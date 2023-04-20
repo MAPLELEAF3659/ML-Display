@@ -218,10 +218,10 @@ void ChangeScreenState(ScreenState targetScreenState)
   switch (screenState)
   {
   case MainScreen:
-    // print titles
-    tft.setTextColor(TFT_WHITE, TFT_BLACK);
-    tft.drawString("Indoor", xpos + 5, ypos + 85, 1);
-    tft.drawString("Outdoor", xpos + 5, ypos + 105, 1);
+    tft.loadFont(Silver_16);
+    tft.drawString("三重", xpos + 60, ypos + 84);
+    tft.drawString("室內", xpos + 60, ypos + 102);
+    tft.unloadFont();
 
     OpenWeatherGetInfo(); // run once at start
 
@@ -526,7 +526,7 @@ void TFTPrintDHTInfo()
   {
     tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
     // write temperature
-    tft.drawString(String(temperature, 1) + "C", xpos + 55, ypos + 80, 2);
+    tft.drawString(String(temperature, 1) + "C", xpos + 23, ypos + 102, 1);
     // update pervious state
     temperaturePrevious = temperature;
   }
@@ -536,7 +536,7 @@ void TFTPrintDHTInfo()
   {
     tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
     // write humidity
-    tft.drawString(String(humidity, 1) + "%", xpos + 100, ypos + 80, 2);
+    tft.drawString(String(humidity, 1) + "%", xpos + 89, ypos + 102, 1);
     // update pervious state
     humidityPrevious = humidity;
   }
@@ -546,10 +546,10 @@ void TFTPrintOpenWeatherInfo()
 {
   // print temperature
   tft.setTextColor(TextColorByTemperature(temperatureOpenWeather), TFT_BLACK);
-  tft.drawString(String(temperatureOpenWeather, 1) + "C", xpos + 55, ypos + 100, 2);
+  tft.drawString(String(temperatureOpenWeather, 1) + "C", xpos + 16, ypos + 80, 2);
   // print humidity
   tft.setTextColor(TextColorByHumidity(humidityOpenWeather), TFT_BLACK);
-  tft.drawString(String(humidityOpenWeather, 1) + "%", xpos + 100, ypos + 100, 2);
+  tft.drawString(String(humidityOpenWeather, 1) + "%", xpos + 89, ypos + 80, 2);
 }
 
 int TextColorByTemperature(float temp)
