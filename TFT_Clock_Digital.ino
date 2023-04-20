@@ -29,7 +29,7 @@ const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 28800; // GMT+8
 const int daylightOffset_sec = 0;
 struct tm timeinfo;
-byte secPrevious, minPrevious, dayPrevious;
+byte secPrevious, minPrevious, hourPrevious, dayPrevious;
 //**NTP**
 
 //**TFT**
@@ -76,6 +76,7 @@ String openWeatherApiKey = String(OPEN_WEATHER_DATA_API_KEY);
 String openWeatherUrl = "https://opendata.cwb.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization=" + openWeatherApiKey + "&limit=1&format=JSON&stationId=C0AI30&elementName=TEMP,HUMD";
 float temperatureOpenWeather = 0;
 float humidityOpenWeather = 0;
+bool isOpenWeatherUpdated;
 //**Open weather data**
 
 //**Player info**
@@ -186,6 +187,12 @@ void loop()
       break;
     }
   }
+
+  if (screenState == MainScreen && !isOpenWeatherUpdated)
+  {
+    OpenWeatherGetInfo();
+    isOpenWeatherUpdated = true;
+  }
 }
 
 void ChangeScreenState(ScreenState targetScreenState)
@@ -218,16 +225,13 @@ void ChangeScreenState(ScreenState targetScreenState)
     tft.drawString("Indoor", xpos + 5, ypos + 85, 1);
     tft.drawString("Outdoor", xpos + 5, ypos + 105, 1);
 
-    DHTGetTempAndHumi(new TimerHandle_t); // run once at start
-    StartTimer("timerDHT", 5000, DHTGetTempAndHumi);
-    // force print temperature
-    tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
-    tft.drawString(String(temperature, 1) + "C", xpos + 55, ypos + 80, 2);
-    // force print humidity
-    tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
-    tft.drawString(String(humidity, 1) + "%", xpos + 100, ypos + 80, 2);
-
     OpenWeatherGetInfo(); // run once at start
+
+    temperature = 0; // set temperature & humidity to 0 to force print
+    humidity = 0;
+    DHTGetTempAndHumi(new TimerHandle_t); // run once at start
+
+    StartTimer("timerWeather", 5000, DHTGetTempAndHumi);
 
     break;
   case PlayerScreen:
@@ -281,17 +285,22 @@ void NTPGetTime(TimerHandle_t xTimer)
     dayPrevious = timeinfo.tm_mday;
   }
 
+  // update by hour
+  if (timeinfo.tm_hour != hourPrevious)
+  {
+    if (screenState == MainScreen)
+    {
+      isOpenWeatherUpdated = false;
+    }
+
+    hourPrevious = timeinfo.tm_hour;
+  }
+
   // update by min
   if (timeinfo.tm_min != minPrevious)
   {
     // print time hh:mm
     TFTPrintTime();
-    
-    // get open weather data every o'clock
-    if (timeinfo.tm_min % 60 == 0)
-    {
-      OpenWeatherGetInfo();
-    }
 
     // update previous state
     minPrevious = timeinfo.tm_min;
