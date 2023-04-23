@@ -175,14 +175,14 @@ void loop()
   {
     String message = Serial.readStringUntil('\n');
 
-    ScreenState targetScreenState = (ScreenState)message.substring(0, message.indexOf(',')).toInt();
+    ScreenState targetScreenState = (ScreenState)message.substring(0, message.indexOf('$')).toInt();
     ChangeScreenState(targetScreenState);
 
     switch (targetScreenState)
     {
     case PlayerScreen:
-      PlayerInfoId playerInfoId = (PlayerInfoId)(message.substring(message.indexOf(',') + 1, message.lastIndexOf(',')).toInt());
-      String value = message.substring(message.lastIndexOf(',') + 1);
+      PlayerInfoId playerInfoId = (PlayerInfoId)(message.substring(message.indexOf('$') + 1, message.lastIndexOf('$')).toInt());
+      String value = message.substring(message.lastIndexOf('$') + 1);
       PlayerInfoUpdate(playerInfoId, value);
       break;
     }
@@ -234,7 +234,6 @@ void ChangeScreenState(ScreenState targetScreenState)
 
     break;
   case PlayerScreen:
-    StartTimer("timerNTP", 500, NTPGetTime);
     TFTPrintPlayerState();
     TFTPrintPlayerSongDuration();
     TFTPrintPlayerSongPosition();
