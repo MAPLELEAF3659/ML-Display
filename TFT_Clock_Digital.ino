@@ -355,11 +355,21 @@ void OpenWeatherGetInfo()
       String elementName = obj["elementName"].as<String>();
       if (elementName == "TEMP")
       {
-        temperatureOpenWeather = obj["elementValue"].as<float>();
+        float tempTemperature = obj["elementValue"].as<float>();
+        if (tempTemperature == -99) // get error value
+        {
+          return;
+        }
+        temperatureOpenWeather = tempTemperature;
       }
       else if (elementName == "HUMD")
       {
-        humidityOpenWeather = obj["elementValue"].as<float>() * 100;
+        float tempHumidity = obj["elementValue"].as<float>();
+        if (tempHumidity == -99) // get error value
+        {
+          return;
+        }
+        humidityOpenWeather = tempHumidity * 100;
       }
     }
 
