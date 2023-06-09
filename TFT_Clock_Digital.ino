@@ -1,5 +1,5 @@
 #include <TFT_eSPI.h> // Graphics and font library for ST7735 driver chip
-#include "Fonts/Custom/Silver_16.h"
+#include "Fonts/Custom/GenHyuuGothicL_12.h"
 #include <SPI.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -192,6 +192,8 @@ void loop()
   if (screenState == MainScreen && !isOpenWeatherUpdated)
   {
     OpenWeatherGetInfo();
+    // print open weather temp/humd info
+    TFTPrintOpenWeatherInfo();
     isOpenWeatherUpdated = true;
   }
 }
@@ -219,10 +221,10 @@ void ChangeScreenState(ScreenState targetScreenState)
   switch (screenState)
   {
   case MainScreen:
-    tft.loadFont(Silver_16);
-    tft.drawString("三重區 天氣", xpos + 5, ypos + 84);
-    tft.drawString("溫度", xpos + 5, ypos + 102);
-    tft.drawString("濕度", xpos + 75, ypos + 102);
+    tft.loadFont(GenHyuuGothicL_12);
+    tft.drawString("三重區", xpos + 5, ypos + 80);
+    tft.drawString("溫度", xpos + 5, ypos + 100);
+    tft.drawString("濕度", xpos + 75, ypos + 100);
     tft.unloadFont();
 
     // OpenWeatherGetInfo(); // run once at start
@@ -368,9 +370,6 @@ void OpenWeatherGetInfo()
         descriptionOpenWeather = obj["elementValue"].as<String>();
       }
     }
-
-    // print open weather temp/humd info
-    TFTPrintOpenWeatherInfo();
   }
   else
   {
@@ -550,18 +549,18 @@ void TFTPrintDate()
 void TFTPrintOpenWeatherInfo()
 {
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString("          ", xpos + 56, ypos + 81, 2);
+  tft.drawString("            ", xpos + 45, ypos + 77, 2);
 
-  tft.loadFont(Silver_16);
-  tft.drawString(descriptionOpenWeather, xpos + 60, ypos + 84);
+  tft.loadFont(GenHyuuGothicL_12);
+  tft.drawString(descriptionOpenWeather, xpos + 45, ypos + 80);
   tft.unloadFont();
 
   // print temperature
   tft.setTextColor(TextColorByTemperature(temperatureOpenWeather), TFT_BLACK);
-  tft.drawString(String(temperatureOpenWeather, 1) + "C", xpos + 30, ypos + 97, 2);
+  tft.drawString(String(temperatureOpenWeather, 1) + "C", xpos + 34, ypos + 97, 2);
   // print humidity
   tft.setTextColor(TextColorByHumidity(humidityOpenWeather), TFT_BLACK);
-  tft.drawString(String(humidityOpenWeather, 1) + "%", xpos + 99, ypos + 97, 2);
+  tft.drawString(String(humidityOpenWeather, 1) + "%", xpos + 104, ypos + 97, 2);
 }
 
 int TextColorByTemperature(float temp)
@@ -729,7 +728,7 @@ void TFTPrintPlayerSongMetadata(String value, int lineIndex)
   tft.drawString("                               ", 0, ypos + songMetadataYPosOffset - 2 + lineIndex * 15, 2);
 
   // load han character
-  tft.loadFont(Silver_16);
+  tft.loadFont(GenHyuuGothicL_12);
 
   // print artist/album/title name
   tft.drawString(value, xpos, ypos + songMetadataYPosOffset + lineIndex * 15);
@@ -745,7 +744,7 @@ void TFTPrintPlayerSongCurrentLyric()
   tft.drawString("                               ", 0, 107, 2);
 
   // load han character
-  tft.loadFont(Silver_16);
+  tft.loadFont(GenHyuuGothicL_12);
 
   // print lyric
   tft.drawString(songCurrentLyric, xpos, 110);
