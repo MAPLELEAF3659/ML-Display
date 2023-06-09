@@ -571,11 +571,11 @@ int TextColorByTemperature(float temp)
   }
   else if (temp < 34 && temp >= 30)
   {
-    return 0xFFE0; // yellow
+    return 0xFC00; // orange
   }
   else if (temp < 30 && temp >= 26)
   {
-    return 0xFC00; // orange
+    return 0xFFE0; // yellow
   }
   else if (temp < 26 && temp >= 22)
   {
