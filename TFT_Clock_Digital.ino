@@ -73,10 +73,11 @@ float humidityPrevious = -1;
 
 //**Open weather data**
 String openWeatherApiKey = String(OPEN_WEATHER_DATA_API_KEY);
-String openWeatherUrl = "https://opendata.cwb.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization=" + openWeatherApiKey + "&limit=1&format=JSON&stationId=C0AI30&elementName=TEMP,HUMD";
+String openWeatherUrl = "https://opendata.cwb.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization=" + openWeatherApiKey + "&limit=1&format=JSON&stationId=C0AI30&elementName=TEMP,HUMD,Weather";
 float temperatureOpenWeather = 0;
 float humidityOpenWeather = 0;
-bool isOpenWeatherUpdated;
+bool isOpenWeatherUpdated = false;
+String descriptionOpenWeather = "";
 //**Open weather data**
 
 //**Player info**
@@ -219,18 +220,20 @@ void ChangeScreenState(ScreenState targetScreenState)
   {
   case MainScreen:
     tft.loadFont(Silver_16);
-    tft.drawString("三重", xpos + 60, ypos + 84);
-    tft.drawString("室內", xpos + 60, ypos + 102);
+    tft.drawString("三重區 天氣", xpos + 5, ypos + 84);
+    tft.drawString("溫度", xpos + 5, ypos + 102);
+    tft.drawString("濕度", xpos + 75, ypos + 102);
     tft.unloadFont();
 
-    OpenWeatherGetInfo(); // run once at start
+    // OpenWeatherGetInfo(); // run once at start
+    isOpenWeatherUpdated = false;
 
-    temperaturePrevious = 0; // set temperature & humidity to 0 to force print
-    humidityPrevious = 0;
-    DHTGetTempAndHumi(new TimerHandle_t); // run once at start
+    // temperaturePrevious = 0; // set temperature & humidity to 0 to force print
+    // humidityPrevious = 0;
+    // DHTGetTempAndHumi(new TimerHandle_t); // run once at start
 
     StartTimer("timerNTP", 500, NTPGetTime);
-    StartTimer("timerWeather", 5000, DHTGetTempAndHumi);
+    // StartTimer("timerWeather", 5000, DHTGetTempAndHumi);
 
     break;
   case PlayerScreen:
@@ -315,26 +318,26 @@ void NTPGetTime(TimerHandle_t xTimer)
   }
 }
 
-void DHTGetTempAndHumi(TimerHandle_t xTimer)
-{
-  // Reading temperature for humidity takes about 250 milliseconds!
-  // Sensor readings may also be up to 2 seconds 'old' (it's a very slow sensor)
-  TempAndHumidity newValues = dht.getTempAndHumidity();
-  // Check if any reads failed and exit early (to try again).
-  if (dht.getStatus() != 0)
-  {
-    Serial.println("[DHT11]Error status: " + String(dht.getStatusString()));
-    return;
-  }
+// void DHTGetTempAndHumi(TimerHandle_t xTimer)
+// {
+//   // Reading temperature for humidity takes about 250 milliseconds!
+//   // Sensor readings may also be up to 2 seconds 'old' (it's a very slow sensor)
+//   TempAndHumidity newValues = dht.getTempAndHumidity();
+//   // Check if any reads failed and exit early (to try again).
+//   if (dht.getStatus() != 0)
+//   {
+//     Serial.println("[DHT11]Error status: " + String(dht.getStatusString()));
+//     return;
+//   }
 
-  // update dht info
-  float heatIndex = dht.computeHeatIndex(newValues.temperature, newValues.humidity);
-  temperature = newValues.temperature;
-  humidity = newValues.humidity;
+//   // update dht info
+//   float heatIndex = dht.computeHeatIndex(newValues.temperature, newValues.humidity);
+//   temperature = newValues.temperature;
+//   humidity = newValues.humidity;
 
-  // print dht info
-  TFTPrintDHTInfo();
-}
+//   // print dht info
+//   TFTPrintDHTInfo();
+// }
 
 void OpenWeatherGetInfo()
 {
@@ -347,29 +350,22 @@ void OpenWeatherGetInfo()
   {
     // Parse the JSON response
     String payload = http.getString();
-    DynamicJsonDocument doc(2048);
+    DynamicJsonDocument doc(4096);
     deserializeJson(doc, payload);
-    JsonArray weatherElement = doc["records"]["location"][0]["weatherElement"];
-    for (JsonObject obj : weatherElement)
+    JsonArray weatherElements = doc["records"]["location"][0]["weatherElement"];
+    for (JsonObject obj : weatherElements)
     {
-      String elementName = obj["elementName"].as<String>();
-      if (elementName == "TEMP")
+      if (obj["elementName"] == "TEMP" && obj["elementValue"].as<float>() != -99)
       {
-        float tempTemperature = obj["elementValue"].as<float>();
-        if (tempTemperature == -99) // get error value
-        {
-          return;
-        }
-        temperatureOpenWeather = tempTemperature;
+        temperatureOpenWeather = obj["elementValue"].as<float>();
       }
-      else if (elementName == "HUMD")
+      else if (obj["elementName"] == "HUMD" && obj["elementValue"].as<float>() != -99)
       {
-        float tempHumidity = obj["elementValue"].as<float>();
-        if (tempHumidity == -99) // get error value
-        {
-          return;
-        }
-        humidityOpenWeather = tempHumidity * 100;
+        humidityOpenWeather = obj["elementValue"].as<float>() * 100;
+      }
+      else if (obj["elementName"] == "Weather")
+      {
+        descriptionOpenWeather = obj["elementValue"].as<String>();
       }
     }
 
@@ -528,37 +524,44 @@ void TFTPrintDate()
                  0, ypos + 58, 2);
 }
 
-void TFTPrintDHTInfo()
-{
-  // check if temperature was updated
-  if (temperature != temperaturePrevious)
-  {
-    tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
-    // write temperature
-    tft.drawString(String(temperature, 1) + "C", xpos + 23, ypos + 102, 1);
-    // update pervious state
-    temperaturePrevious = temperature;
-  }
+// void TFTPrintDHTInfo()
+// {
+//   // check if temperature was updated
+//   if (temperature != temperaturePrevious)
+//   {
+//     tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
+//     // write temperature
+//     tft.drawString(String(temperature, 1) + "C", xpos + 23, ypos + 102, 1);
+//     // update pervious state
+//     temperaturePrevious = temperature;
+//   }
 
-  // check if humidity was updated
-  if (humidity != humidityPrevious)
-  {
-    tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
-    // write humidity
-    tft.drawString(String(humidity, 1) + "%", xpos + 89, ypos + 102, 1);
-    // update pervious state
-    humidityPrevious = humidity;
-  }
-}
+//   // check if humidity was updated
+//   if (humidity != humidityPrevious)
+//   {
+//     tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
+//     // write humidity
+//     tft.drawString(String(humidity, 1) + "%", xpos + 89, ypos + 102, 1);
+//     // update pervious state
+//     humidityPrevious = humidity;
+//   }
+// }
 
 void TFTPrintOpenWeatherInfo()
 {
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString("          ", xpos + 56, ypos + 81, 2);
+
+  tft.loadFont(Silver_16);
+  tft.drawString(descriptionOpenWeather, xpos + 60, ypos + 84);
+  tft.unloadFont();
+
   // print temperature
   tft.setTextColor(TextColorByTemperature(temperatureOpenWeather), TFT_BLACK);
-  tft.drawString(String(temperatureOpenWeather, 1) + "C", xpos + 16, ypos + 80, 2);
+  tft.drawString(String(temperatureOpenWeather, 1) + "C", xpos + 30, ypos + 97, 2);
   // print humidity
   tft.setTextColor(TextColorByHumidity(humidityOpenWeather), TFT_BLACK);
-  tft.drawString(String(humidityOpenWeather, 1) + "%", xpos + 89, ypos + 80, 2);
+  tft.drawString(String(humidityOpenWeather, 1) + "%", xpos + 99, ypos + 97, 2);
 }
 
 int TextColorByTemperature(float temp)
