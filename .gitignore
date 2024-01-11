@@ -1,3 +1,4 @@
 .vscode
 build
 secrets.h
+wifi_info.h

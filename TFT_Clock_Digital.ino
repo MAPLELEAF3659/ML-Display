@@ -8,6 +8,7 @@
 #include "DHTesp.h"
 #include <queue>
 #include "secrets.h"
+#include "wifi_info.h"
 
 using namespace std;
 
@@ -20,8 +21,8 @@ Upload Speed: 921600
 */
 
 //**WiFi**
-const char *ssid = "ML-WiFi";
-const char *password = "95089608";
+const char *ssid = WIFI_SSID;
+const char *password = WIFI_PASSWORD;
 //**WiFi**
 
 //**NTP**
@@ -34,7 +35,7 @@ byte secPrevious, minPrevious, hourPrevious, dayPrevious;
 
 //**TFT**
 TFT_eSPI tft = TFT_eSPI(); // Invoke library, pins defined in User_Setup.h
-// GND=GND VCC=3V3 SCL=G14 SDA=G15 RES=G33 DC=G27 CS=G5 BL，=G22
+// GND=GND VCC=3V3 SCL=G14 SDA=G15 RES=G33 DC=G27 CS=G5 BL=G22
 byte xpos = 10;
 byte ypos = 10;
 uint upperBarBackgroundColor = 0x2104;
@@ -58,26 +59,26 @@ uint upperBarBackgroundColor = 0x2104;
 */
 //**TFT**
 
-//**DHT**
-DHTesp dht;
-// Pin number for DHT11 data pin
-int dhtPin = 17; // VCC=5V
-// Update duration
-int dhtUpdateInterval = 5000; // ms
-// DHT info
-float temperature = 0;
-float humidity = 0;
-float temperaturePrevious = -1;
-float humidityPrevious = -1;
-//**DHT**
+// //**DHT**
+// DHTesp dht;
+// // Pin number for DHT11 data pin
+// int dhtPin = 17; // VCC=5V
+// // Update duration
+// int dhtUpdateInterval = 5000; // ms
+// // DHT info
+// float temperature = 0;
+// float humidity = 0;
+// float temperaturePrevious = -1;
+// float humidityPrevious = -1;
+// //**DHT**
 
 //**Open weather data**
-String openWeatherApiKey = String(OPEN_WEATHER_DATA_API_KEY);
-String openWeatherUrl = "https://opendata.cwb.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization=" + openWeatherApiKey + "&limit=1&format=JSON&stationId=C0AI30&elementName=TEMP,HUMD,Weather";
+String openWeatherUrl = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization=" + String(OPEN_WEATHER_DATA_API_KEY) + "&format=JSON&StationId=C0AI30&WeatherElement=Weather,AirTemperature,RelativeHumidity";
 float temperatureOpenWeather = 0;
 float humidityOpenWeather = 0;
 bool isOpenWeatherUpdated = false;
 String descriptionOpenWeather = "";
+String stationNameOpenWeather = "";
 //**Open weather data**
 
 //**Player info**
@@ -161,9 +162,9 @@ void setup()
   tft.println("[NTP server]Done.");
 
   // setup dht11
-  tft.println("[DHT11]Setting up...");
-  dht.setup(dhtPin, DHTesp::DHT11);
-  tft.println("[DHT11]Done.");
+  // tft.println("[DHT11]Setting up...");
+  // dht.setup(dhtPin, DHTesp::DHT11);
+  // tft.println("[DHT11]Done.");
 
   // setup complete
   tft.println("[System]Welcome!");
@@ -247,6 +248,7 @@ void ChangeScreenState(ScreenState targetScreenState)
   }
 }
 
+// **Timer functions**
 void StartTimer(char timerName[], int timerInterval, TimerCallbackFunction_t function)
 {
   // create timer
@@ -273,6 +275,7 @@ void StopAllTimer()
   }
 }
 
+// **Update Info**
 void NTPGetTime(TimerHandle_t xTimer)
 {
   // get time info
@@ -320,33 +323,14 @@ void NTPGetTime(TimerHandle_t xTimer)
   }
 }
 
-// void DHTGetTempAndHumi(TimerHandle_t xTimer)
-// {
-//   // Reading temperature for humidity takes about 250 milliseconds!
-//   // Sensor readings may also be up to 2 seconds 'old' (it's a very slow sensor)
-//   TempAndHumidity newValues = dht.getTempAndHumidity();
-//   // Check if any reads failed and exit early (to try again).
-//   if (dht.getStatus() != 0)
-//   {
-//     Serial.println("[DHT11]Error status: " + String(dht.getStatusString()));
-//     return;
-//   }
-
-//   // update dht info
-//   float heatIndex = dht.computeHeatIndex(newValues.temperature, newValues.humidity);
-//   temperature = newValues.temperature;
-//   humidity = newValues.humidity;
-
-//   // print dht info
-//   TFTPrintDHTInfo();
-// }
-
 void OpenWeatherGetInfo()
 {
   // Make an HTTP request
   HTTPClient http;
   http.begin(openWeatherUrl); // replace with your URL
   int httpCode = http.GET();
+  float tempTemp, tempHumi;
+  String tempDesc;
 
   if (httpCode == HTTP_CODE_OK)
   {
@@ -354,22 +338,15 @@ void OpenWeatherGetInfo()
     String payload = http.getString();
     DynamicJsonDocument doc(4096);
     deserializeJson(doc, payload);
-    JsonArray weatherElements = doc["records"]["location"][0]["weatherElement"];
-    for (JsonObject obj : weatherElements)
-    {
-      if (obj["elementName"] == "TEMP" && obj["elementValue"].as<float>() != -99)
-      {
-        temperatureOpenWeather = obj["elementValue"].as<float>();
-      }
-      else if (obj["elementName"] == "HUMD" && obj["elementValue"].as<float>() != -99)
-      {
-        humidityOpenWeather = obj["elementValue"].as<float>() * 100;
-      }
-      else if (obj["elementName"] == "Weather")
-      {
-        descriptionOpenWeather = obj["elementValue"].as<String>();
-      }
-    }
+    tempTemp = doc["records"]["Station"][0]["WeatherElement"]["AirTemperature"].as<float>();
+    tempHumi = doc["records"]["Station"][0]["WeatherElement"]["RelativeHumidity"].as<float>();
+    tempDesc = doc["records"]["Station"][0]["WeatherElement"]["Weather"].as<String>();
+    if (tempTemp != -99)
+      temperatureOpenWeather = tempTemp;
+    if (tempHumi != -99)
+      humidityOpenWeather = tempHumi;
+    if (tempDesc != "-99")
+      descriptionOpenWeather = tempDesc;
   }
   else
   {
@@ -444,6 +421,7 @@ void PlayerInfoUpdate(PlayerInfoId infoId, String value)
   }
 }
 
+// **Time & Date**
 void TFTPrintTime()
 {
   int xposTime = xpos;
@@ -523,44 +501,23 @@ void TFTPrintDate()
                  0, ypos + 58, 2);
 }
 
-// void TFTPrintDHTInfo()
-// {
-//   // check if temperature was updated
-//   if (temperature != temperaturePrevious)
-//   {
-//     tft.setTextColor(TextColorByTemperature(temperature), TFT_BLACK);
-//     // write temperature
-//     tft.drawString(String(temperature, 1) + "C", xpos + 23, ypos + 102, 1);
-//     // update pervious state
-//     temperaturePrevious = temperature;
-//   }
-
-//   // check if humidity was updated
-//   if (humidity != humidityPrevious)
-//   {
-//     tft.setTextColor(TextColorByHumidity(humidity), TFT_BLACK);
-//     // write humidity
-//     tft.drawString(String(humidity, 1) + "%", xpos + 89, ypos + 102, 1);
-//     // update pervious state
-//     humidityPrevious = humidity;
-//   }
-// }
-
+// **Weather**
 void TFTPrintOpenWeatherInfo()
 {
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString("            ", xpos + 45, ypos + 77, 2);
+  tft.drawString("               ", 55, 88, 2);
 
   tft.loadFont(GenHyuuGothicL_12);
-  tft.drawString(descriptionOpenWeather, xpos + 45, ypos + 80);
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString(descriptionOpenWeather, 55, 90);
   tft.unloadFont();
 
   // print temperature
   tft.setTextColor(TextColorByTemperature(temperatureOpenWeather), TFT_BLACK);
-  tft.drawString(String(temperatureOpenWeather, 1) + "C", xpos + 34, ypos + 97, 2);
+  tft.drawString(String(temperatureOpenWeather, 1) + "C", 44, 108, 2);
   // print humidity
   tft.setTextColor(TextColorByHumidity(humidityOpenWeather), TFT_BLACK);
-  tft.drawString(String(humidityOpenWeather, 1) + "%", xpos + 104, ypos + 97, 2);
+  tft.drawString(String(humidityOpenWeather, 1) + "%", 114, 108, 2);
 }
 
 int TextColorByTemperature(float temp)
@@ -583,15 +540,15 @@ int TextColorByTemperature(float temp)
   }
   else if (temp < 22 && temp >= 18)
   {
-    return 0x07F0; // blue green
+    return 0x07FC; // blue green
   }
   else if (temp < 18 && temp >= 14)
   {
-    return 0x001F; // blue
+    return 0x067F; // light blue
   }
   else if (temp < 14)
   {
-    return 0x07FF; // light blue
+    return 0x077F; // lighter blue
   }
 }
 
@@ -615,10 +572,11 @@ int TextColorByHumidity(float humi)
   }
   else if (humi < 40)
   {
-    return 0x001F; // blue
+    return 0x07F7; // green blue
   }
 }
 
+// **Player**
 void TFTPrintPlayerState()
 {
   // clear player state screen area
@@ -725,13 +683,14 @@ void TFTPrintPlayerSongMetadata(String value, int lineIndex)
 {
   // clear screen
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString("                               ", 0, ypos + songMetadataYPosOffset - 2 + lineIndex * 15, 2);
+  tft.drawString("                               ", 0, ypos + songMetadataYPosOffset - 2 + lineIndex * 17, 2);
 
   // load han character
   tft.loadFont(GenHyuuGothicL_12);
 
   // print artist/album/title name
-  tft.drawString(value, xpos, ypos + songMetadataYPosOffset + lineIndex * 15);
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString(value, xpos, ypos + songMetadataYPosOffset + lineIndex * 17);
 
   // unload han character
   tft.unloadFont();
@@ -739,15 +698,15 @@ void TFTPrintPlayerSongMetadata(String value, int lineIndex)
 
 void TFTPrintPlayerSongCurrentLyric()
 {
-  // clear screen
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString("                               ", 0, 107, 2);
+  tft.drawString("                           ", xpos, 114, 2);
 
   // load han character
   tft.loadFont(GenHyuuGothicL_12);
 
   // print lyric
-  tft.drawString(songCurrentLyric, xpos, 110);
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString(songCurrentLyric, xpos, 116);
 
   // unload han character
   tft.unloadFont();
