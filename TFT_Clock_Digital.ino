@@ -514,10 +514,10 @@ void TFTPrintOpenWeatherInfo()
 
   // print temperature
   tft.setTextColor(TextColorByTemperature(temperatureOpenWeather), TFT_BLACK);
-  tft.drawString(String(temperatureOpenWeather, 1) + "C", 44, 108, 2);
+  tft.drawString((temperatureOpenWeather > 10 ? "" : " ") + String(temperatureOpenWeather, 1) + "C", 44, 108, 2);
   // print humidity
   tft.setTextColor(TextColorByHumidity(humidityOpenWeather), TFT_BLACK);
-  tft.drawString(String(humidityOpenWeather, 1) + "%", 114, 108, 2);
+  tft.drawString((humidityOpenWeather > 10 ? "" : " ") + String(humidityOpenWeather, 1) + "%", 114, 108, 2);
 }
 
 int TextColorByTemperature(float temp)
@@ -554,17 +554,17 @@ int TextColorByTemperature(float temp)
 
 int TextColorByHumidity(float humi)
 {
-  if (humi >= 80)
+  if (humi >= 90)
   {
-    return 0xF800; // red
+    return 0x077F; // lighter blue
   }
-  else if (humi < 80 && humi >= 70)
+  else if (humi < 90 && humi >= 75)
   {
-    return 0xFC00; // orange
+    return 0x067F; // light blue
   }
-  else if (humi < 70 && humi >= 60)
+  else if (humi < 75 && humi >= 60)
   {
-    return 0xFFE0; // yellow
+    return 0x07F7; // green blue
   }
   else if (humi < 60 && humi >= 40)
   {
@@ -572,7 +572,11 @@ int TextColorByHumidity(float humi)
   }
   else if (humi < 40)
   {
-    return 0x07F7; // green blue
+    return 0xFC00; // orange
+  }
+  else if (humi < 20)
+  {
+    return 0xF800; // red
   }
 }
 
