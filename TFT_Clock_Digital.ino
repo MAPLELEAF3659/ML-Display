@@ -292,9 +292,9 @@ void NTPGetTime(TimerHandle_t xTimer)
   {
     if (screenState == MainScreen)
     {
+      TFTPrintGreeting();
       isOpenWeatherUpdated = false;
     }
-    TFTPrintGreeting();
 
     hourPrevious = timeinfo.tm_hour;
   }
@@ -425,28 +425,17 @@ void TFTPrintTime()
   int xposTime = xpos + 5;
   int yposTime = ypos + 15;
 
-  switch (screenState)
-  {
-  case MainScreen:
-    // print time
-    tft.setTextColor(0x39C4, TFT_BLACK);
-    tft.drawString("88 88", xposTime, yposTime, 7);
-    tft.setTextColor(0xFFFF);
-    if (timeinfo.tm_hour < 10)
-      xposTime += tft.drawChar('0', xposTime, yposTime, 7);
-    xposTime += tft.drawNumber(timeinfo.tm_hour, xposTime, yposTime, 7);
-    xposTime += tft.drawChar(' ', xposTime, yposTime, 7);
-    if (timeinfo.tm_min < 10)
-      xposTime += tft.drawChar('0', xposTime, yposTime, 7);
-    xposTime += tft.drawNumber(timeinfo.tm_min, xposTime, yposTime, 7);
-    break;
-  case PlayerScreen:
-    tft.setTextColor(0xFFFF, TFT_BLACK);
-    tft.drawString((timeinfo.tm_hour < 10 ? "0" : "") + String(timeinfo.tm_hour) + " " +
-                       (timeinfo.tm_min < 10 ? "0" : "") + String(timeinfo.tm_min),
-                   130, 123, 1);
-    break;
-  }
+  // print time
+  tft.setTextColor(0x39C4, TFT_BLACK);
+  tft.drawString("88 88", xposTime, yposTime, 7);
+  tft.setTextColor(0xFFFF);
+  if (timeinfo.tm_hour < 10)
+    xposTime += tft.drawChar('0', xposTime, yposTime, 7);
+  xposTime += tft.drawNumber(timeinfo.tm_hour, xposTime, yposTime, 7);
+  xposTime += tft.drawChar(' ', xposTime, yposTime, 7);
+  if (timeinfo.tm_min < 10)
+    xposTime += tft.drawChar('0', xposTime, yposTime, 7);
+  xposTime += tft.drawNumber(timeinfo.tm_min, xposTime, yposTime, 7);
 }
 
 void TFTPrintSecBlink()
@@ -470,11 +459,11 @@ void TFTPrintGreeting()
 {
   tft.setTextColor(0xFFFF, TFT_BLACK);
   if (timeinfo.tm_hour >= 18 || timeinfo.tm_hour < 5)
-    tft.drawString("GOOD EVENING, ML", xpos + 10, ypos, 1);
+    tft.drawString("GOOD EVENING, ML  ", xpos + 8, ypos, 1);
   else if (timeinfo.tm_hour >= 12)
-    tft.drawString("GOOD AFTERNOON, ML", xpos + 10, ypos, 1);
+    tft.drawString("GOOD AFTERNOON, ML", xpos + 8, ypos, 1);
   else if (timeinfo.tm_hour >= 5)
-    tft.drawString("GOOD MORNING, ML", xpos + 10, ypos, 1);
+    tft.drawString("GOOD MORNING, ML  ", xpos + 8, ypos, 1);
 }
 
 void TFTPrintDate()
