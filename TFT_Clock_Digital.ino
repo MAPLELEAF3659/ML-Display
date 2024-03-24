@@ -116,7 +116,7 @@ String songSampleRate = "0";
 String songCodec = "";
 String songCurrentLyric = "";
 // for tft print
-int songMetadataYPosOffset = 53;
+int songMetadataYPosOffset = 58;
 //**Player info**
 
 //**Timer**
@@ -515,10 +515,10 @@ void TFTPrintOpenWeatherInfo()
 
   // print temperature
   tft.setTextColor(TextColorByTemperature(temperatureOpenWeather), TFT_BLACK);
-  tft.drawString((temperatureOpenWeather >= 10 ? "" : " ") + String(temperatureOpenWeather, 1) + "C", xpos + 40, ypos + 108, 2);
+  tft.drawString((temperatureOpenWeather >= 10 ? "" : " ") + String(temperatureOpenWeather, 1) + "C", xpos + 40, ypos + 105, 2);
   // print humidity
   tft.setTextColor(TextColorByHumidity(humidityOpenWeather), TFT_BLACK);
-  tft.drawString((humidityOpenWeather >= 10 ? "" : " ") + String(humidityOpenWeather, 1) + "%", xpos + 110, ypos + 108, 2);
+  tft.drawString((humidityOpenWeather >= 10 ? "" : " ") + String(humidityOpenWeather, 1) + "%", xpos + 110, ypos + 105, 2);
 }
 
 int TextColorByTemperature(float temp)
@@ -608,11 +608,11 @@ void TFTPrintPlayerSongCodec()
 {
   // clear song codec screen area
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString("            ", xpos + 80, 5, 2);
+  tft.drawString("            ", xpos + 85, 5, 2);
 
   tft.setTextColor(0xFFFF, TextBackgroundColorByCodec(songCodec));
   // print song codec
-  int xposCodec = xpos + 120;
+  int xposCodec = xpos + 125;
   tft.drawString(" " + songCodec + " ", xposCodec + (songCodec.length() * -5.2), 5, 2);
 }
 
@@ -648,7 +648,7 @@ void TFTPrintPlayerSongDuration()
   // print duration in 00:00 format
   tft.drawString(((songDuration / 60 < 10) ? "0" : "") + String(songDuration / 60) + ":" +
                      ((songDuration % 60 < 10) ? "0" : "") + String(songDuration % 60),
-                 xpos + 113, 27, 1);
+                 xpos + 118, 27, 1);
 }
 
 void TFTPrintPlayerSongPosition()
@@ -663,8 +663,8 @@ void TFTPrintPlayerSongPosition()
 
   // draw position bar
   int xposSong = xpos;
-  int xIndexPlayingPosition = map(((float)songPostion / (float)songDuration) * 100, 0, 100, 0, 23);
-  for (int i = 0; i < 24; i++)
+  int xIndexPlayingPosition = map(((float)songPostion / (float)songDuration) * 100, 0, 100, 0, 24);
+  for (int i = 0; i <= 24; i++)
   {
     xposSong += tft.drawString(i == xIndexPlayingPosition ? "+" : "-", xposSong, 37, 1);
   }
@@ -677,10 +677,7 @@ void TFTPrintPlayerSongGeneralInfo()
   tft.drawString("                             ", 0, 49, 1);
 
   // print song general info
-  float sampleRateF = songSampleRate.toFloat() / 1000;
-  tft.drawString(songBitDepth + "bits " +
-                     String(sampleRateF, 1) + "kHz " +
-                     songBitrate + "kbps",
+  tft.drawString(songBitDepth + "bits " + songSampleRate + "Hz " + songBitrate + "kbps",
                  xpos, 49, 1);
 }
 
