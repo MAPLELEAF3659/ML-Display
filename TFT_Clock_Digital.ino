@@ -5,7 +5,7 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include "time.h"
-#include "DHTesp.h"
+// #include "DHTesp.h"
 #include <queue>
 #include "secrets.h"
 #include "wifi_info.h"
@@ -36,8 +36,8 @@ byte secPrevious, minPrevious, hourPrevious, dayPrevious;
 //**TFT**
 TFT_eSPI tft = TFT_eSPI(); // Invoke library, pins defined in User_Setup.h
 // GND=GND VCC=3V3 SCL=G14 SDA=G15 RES=G33 DC=G27 CS=G5 BL=G22
-byte xpos = 10;
-byte ypos = 10;
+byte xpos = 5;
+byte ypos = 5;
 uint upperBarBackgroundColor = 0x2104;
 /*
   A few colour codes:
@@ -222,11 +222,6 @@ void ChangeScreenState(ScreenState targetScreenState)
   switch (screenState)
   {
   case MainScreen:
-    tft.loadFont(GenHyuuGothicL_12);
-    tft.drawString("三重區", xpos + 5, ypos + 80);
-    tft.drawString("溫度", xpos + 5, ypos + 100);
-    tft.drawString("濕度", xpos + 75, ypos + 100);
-    tft.unloadFont();
 
     // OpenWeatherGetInfo(); // run once at start
     isOpenWeatherUpdated = false;
@@ -236,6 +231,7 @@ void ChangeScreenState(ScreenState targetScreenState)
     // DHTGetTempAndHumi(new TimerHandle_t); // run once at start
 
     StartTimer("timerNTP", 500, NTPGetTime);
+    TFTPrintGreeting();
     // StartTimer("timerWeather", 5000, DHTGetTempAndHumi);
 
     break;
@@ -298,6 +294,7 @@ void NTPGetTime(TimerHandle_t xTimer)
     {
       isOpenWeatherUpdated = false;
     }
+    TFTPrintGreeting();
 
     hourPrevious = timeinfo.tm_hour;
   }
@@ -317,6 +314,7 @@ void NTPGetTime(TimerHandle_t xTimer)
   {
     // blink ":"
     TFTPrintSecBlink();
+    TFTPrintTimeSec();
 
     // update previous state
     secPrevious = timeinfo.tm_sec;
@@ -424,10 +422,12 @@ void PlayerInfoUpdate(PlayerInfoId infoId, String value)
 // **Time & Date**
 void TFTPrintTime()
 {
-  int xposTime = xpos;
-  int yposTime = ypos;
-  if (screenState == MainScreen)
+  int xposTime = xpos + 5;
+  int yposTime = ypos + 15;
+
+  switch (screenState)
   {
+  case MainScreen:
     // print time
     tft.setTextColor(0x39C4, TFT_BLACK);
     tft.drawString("88 88", xposTime, yposTime, 7);
@@ -439,32 +439,42 @@ void TFTPrintTime()
     if (timeinfo.tm_min < 10)
       xposTime += tft.drawChar('0', xposTime, yposTime, 7);
     xposTime += tft.drawNumber(timeinfo.tm_min, xposTime, yposTime, 7);
-  }
-  else
-  {
+    break;
+  case PlayerScreen:
     tft.setTextColor(0xFFFF, TFT_BLACK);
     tft.drawString((timeinfo.tm_hour < 10 ? "0" : "") + String(timeinfo.tm_hour) + " " +
                        (timeinfo.tm_min < 10 ? "0" : "") + String(timeinfo.tm_min),
                    130, 123, 1);
+    break;
   }
 }
 
 void TFTPrintSecBlink()
 {
+  // print ":" background
+  tft.setTextColor(0x39C4, TFT_BLACK);
+  tft.drawString(":", xpos + 70, ypos + 15, 7);
+
   // print ":" (blink it)
-  switch (screenState)
-  {
-  case MainScreen:
-    tft.setTextColor(0x39C4, TFT_BLACK);
-    tft.drawString(":", 74, ypos, 7);
-    tft.setTextColor(0xFFFF);
-    tft.drawChar(timeinfo.tm_sec % 2 == 0 ? ':' : ' ', 74, ypos, 7);
-    break;
-  case PlayerScreen:
-    tft.setTextColor(0xFFFF, TFT_BLACK);
-    tft.drawChar(timeinfo.tm_sec % 2 == 0 ? ':' : ' ', 142, 123, 1);
-    break;
-  }
+  tft.setTextColor(0xFFFF);
+  tft.drawChar(timeinfo.tm_sec % 2 == 0 ? ':' : ' ', xpos + 70, ypos + 15, 7);
+}
+
+void TFTPrintTimeSec()
+{
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString((timeinfo.tm_sec < 10 ? "0" : "") + String(timeinfo.tm_sec), xpos + 130, ypos, 1);
+}
+
+void TFTPrintGreeting()
+{
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  if (timeinfo.tm_hour >= 18 || timeinfo.tm_hour < 5)
+    tft.drawString("GOOD EVENING, ML", xpos + 10, ypos, 1);
+  else if (timeinfo.tm_hour >= 12)
+    tft.drawString("GOOD AFTERNOON, ML", xpos + 10, ypos, 1);
+  else if (timeinfo.tm_hour >= 5)
+    tft.drawString("GOOD MORNING, ML", xpos + 10, ypos, 1);
 }
 
 void TFTPrintDate()
@@ -495,29 +505,31 @@ void TFTPrintDate()
     dayOfWeekStr = "SAT.";
     break;
   }
-  tft.drawString("    " + String(timeinfo.tm_year + 1900) + "/" +
+  tft.drawString(String(timeinfo.tm_year + 1900) + "/" +
                      (timeinfo.tm_mon < 9 ? "0" : "") + String(timeinfo.tm_mon + 1) + "/" +
                      (timeinfo.tm_mday < 10 ? "0" : "") + String(timeinfo.tm_mday) + " " + dayOfWeekStr + "  ",
-                 0, ypos + 58, 2);
+                 xpos + 20, ypos + 68, 2);
 }
 
 // **Weather**
 void TFTPrintOpenWeatherInfo()
 {
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString("               ", 55, 88, 2);
+  tft.drawString("               ", xpos, ypos + 83, 2);
 
   tft.loadFont(GenHyuuGothicL_12);
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString(descriptionOpenWeather, 55, 90);
+  tft.drawString("三重區 " + descriptionOpenWeather, xpos + 10, ypos + 90);
+  tft.drawString("溫度", xpos + 10, ypos + 110, 2);
+  tft.drawString("濕度", xpos + 83, ypos + 110, 2);
   tft.unloadFont();
 
   // print temperature
   tft.setTextColor(TextColorByTemperature(temperatureOpenWeather), TFT_BLACK);
-  tft.drawString((temperatureOpenWeather > 10 ? "" : " ") + String(temperatureOpenWeather, 1) + "C", 44, 108, 2);
+  tft.drawString((temperatureOpenWeather >= 10 ? "" : " ") + String(temperatureOpenWeather, 1) + "C", xpos + 40, ypos + 108, 2);
   // print humidity
   tft.setTextColor(TextColorByHumidity(humidityOpenWeather), TFT_BLACK);
-  tft.drawString((humidityOpenWeather > 10 ? "" : " ") + String(humidityOpenWeather, 1) + "%", 114, 108, 2);
+  tft.drawString((humidityOpenWeather >= 10 ? "" : " ") + String(humidityOpenWeather, 1) + "%", xpos + 110, ypos + 108, 2);
 }
 
 int TextColorByTemperature(float temp)
