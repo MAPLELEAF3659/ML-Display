@@ -74,9 +74,9 @@ uint upperBarBackgroundColor = 0x2104;
 
 //**Open weather data**
 String openWeatherUrl = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization=" + String(OPEN_WEATHER_DATA_API_KEY) + "&format=JSON&StationId=C0AI30&WeatherElement=Weather,AirTemperature,RelativeHumidity";
+bool isOpenWeatherInfoUpdated = false;
 float temperatureOpenWeather = 0;
 float humidityOpenWeather = 0;
-bool isOpenWeatherUpdated = false;
 String descriptionOpenWeather = "";
 String stationNameOpenWeather = "";
 //**Open weather data**
@@ -190,12 +190,12 @@ void loop()
     }
   }
 
-  if (screenState == MainScreen && !isOpenWeatherUpdated)
+  if (isOpenWeatherInfoUpdated == false)
   {
-    OpenWeatherGetInfo();
     // print open weather temp/humd info
+    OpenWeatherGetInfo();
     TFTPrintOpenWeatherInfo();
-    isOpenWeatherUpdated = true;
+    isOpenWeatherInfoUpdated = true;
   }
 }
 
@@ -215,6 +215,7 @@ void ChangeScreenState(ScreenState targetScreenState)
   // force clear screen and previous states when screenState changed
   ClearScreen(0, 160, 5);
   dayPrevious = -1;
+  hourPrevious = -1;
   minPrevious = -1;
   secPrevious = -1;
 
@@ -222,18 +223,22 @@ void ChangeScreenState(ScreenState targetScreenState)
   switch (screenState)
   {
   case MainScreen:
-
-    // OpenWeatherGetInfo(); // run once at start
-    isOpenWeatherUpdated = false;
-
     // temperaturePrevious = 0; // set temperature & humidity to 0 to force print
     // humidityPrevious = 0;
     // DHTGetTempAndHumi(new TimerHandle_t); // run once at start
 
-    StartTimer("timerNTP", 500, NTPGetTime);
-    TFTPrintGreeting();
-    // StartTimer("timerWeather", 5000, DHTGetTempAndHumi);
+    tft.loadFont(GenHyuuGothicL_12);
+    tft.setTextColor(0xFFFF, TFT_BLACK);
+    tft.drawString("三重區 LOADING", xpos + 10, ypos + 90);
+    tft.drawString("溫度", xpos + 10, ypos + 107, 2);
+    tft.drawString("濕度", xpos + 83, ypos + 107, 2);
+    tft.unloadFont();
 
+    isOpenWeatherInfoUpdated = false;
+    delay(1000);
+
+    StartTimer("timerNTP", 500, NTPGetTime);
+    // StartTimer("timerWeather", 5000, DHTGetTempAndHumi);
     break;
   case PlayerScreen:
     TFTPrintPlayerState();
@@ -293,7 +298,7 @@ void NTPGetTime(TimerHandle_t xTimer)
     if (screenState == MainScreen)
     {
       TFTPrintGreeting();
-      isOpenWeatherUpdated = false;
+      isOpenWeatherInfoUpdated = false;
     }
 
     hourPrevious = timeinfo.tm_hour;
@@ -459,11 +464,11 @@ void TFTPrintGreeting()
 {
   tft.setTextColor(0xFFFF, TFT_BLACK);
   if (timeinfo.tm_hour >= 18 || timeinfo.tm_hour < 5)
-    tft.drawString("GOOD EVENING, ML  ", xpos + 8, ypos, 1);
+    tft.drawString("GOOD EVENING  ", xpos + 8, ypos, 1);
   else if (timeinfo.tm_hour >= 12)
-    tft.drawString("GOOD AFTERNOON, ML", xpos + 8, ypos, 1);
+    tft.drawString("GOOD AFTERNOON", xpos + 8, ypos, 1);
   else if (timeinfo.tm_hour >= 5)
-    tft.drawString("GOOD MORNING, ML  ", xpos + 8, ypos, 1);
+    tft.drawString("GOOD MORNING  ", xpos + 8, ypos, 1);
 }
 
 void TFTPrintDate()
@@ -504,13 +509,11 @@ void TFTPrintDate()
 void TFTPrintOpenWeatherInfo()
 {
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString("               ", xpos, ypos + 83, 2);
+  tft.drawString("                   ", xpos + 49, ypos + 88, 2);
 
   tft.loadFont(GenHyuuGothicL_12);
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString("三重區 " + descriptionOpenWeather, xpos + 10, ypos + 90);
-  tft.drawString("溫度", xpos + 10, ypos + 110, 2);
-  tft.drawString("濕度", xpos + 83, ypos + 110, 2);
+  tft.drawString(descriptionOpenWeather, xpos + 50, ypos + 90);
   tft.unloadFont();
 
   // print temperature
