@@ -11,6 +11,8 @@
 #include "wifi_info.h"
 
 #define STOCK_SIZE 2
+#define CURRENCY_SIZE 2
+#define FINANCE_TOTAL_SIZE 4
 
 /*
 **Upload settings**
@@ -38,7 +40,6 @@ TFT_eSPI tft = TFT_eSPI();  // Invoke library, pins defined in User_Setup.h
 // GND=GND VCC=3V3 SCL=G14 SDA=G15 RES=G33 DC=G27 CS=G5 BL=G22
 uint8_t xpos = 5;
 uint8_t ypos = 5;
-uint upperBarBackgroundColor = 0x2104;
 /*
   A few colour codes:
 
@@ -59,19 +60,6 @@ uint upperBarBackgroundColor = 0x2104;
 */
 //**TFT**
 
-// //**DHT**
-// DHTesp dht;
-// // Pin number for DHT11 data pin
-// int dhtPin = 17; // VCC=5V
-// // Update duration
-// int dhtUpdateInterval = 5000; // ms
-// // DHT info
-// float temperature = 0;
-// float humidity = 0;
-// float temperaturePrevious = -1;
-// float humidityPrevious = -1;
-// //**DHT**
-
 //**Open weather data**
 String openWeatherUrl = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization=" + String(OPEN_WEATHER_DATA_API_KEY) + "&format=JSON&StationId=C0AI30&WeatherElement=Weather,AirTemperature,RelativeHumidity";
 bool isOpenWeatherInfoUpdated = false;
@@ -79,12 +67,13 @@ bool isOpenWeatherInfoPrinted = true;
 float temperatureOpenWeather = 0;
 float humidityOpenWeather = 0;
 String descriptionOpenWeather = "";
-String stationNameOpenWeather = "";
 //**Open weather data**
 
 //**TWSE data**
 String twseUrl = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_";
 bool isTWSEInfoUpdated = false;
+bool isTWSEInfoPrinted = true;
+uint8_t stockCurrentIndex = -1;
 String stockNumbers[STOCK_SIZE] = { "0050", "t00" };
 String stockNames[STOCK_SIZE] = { "元大台灣50", "加權指數" };
 float stockCurrentPrices[STOCK_SIZE] = { 0, 0 };
@@ -92,6 +81,16 @@ float stockYesterdayPrices[STOCK_SIZE] = { 0, 0 };
 float stockPriceChanges_amount[STOCK_SIZE] = { 0, 0 };
 float stockPriceChanges_percent[STOCK_SIZE] = { 0, 0 };
 //**TWSE data**
+
+//**Currency data**
+String currencyUrl = "https://open.er-api.com/v6/latest/TWD";
+bool isCurrencyInfoUpdated = false;
+bool isCurrencyInfoPrinted = true;
+uint8_t currencyCurrentIndex = -1;
+String currencyNames[CURRENCY_SIZE] = { "日幣JPY 兌 台幣TWD", "美元USD 兌 台幣TWD" };
+float currencyPrices[CURRENCY_SIZE] = { 0, 0 };
+float currencyPricesPrevious[CURRENCY_SIZE] = { 0, 0 };
+//**Currency data**
 
 //**Player info**
 enum PlayerInfoId {
@@ -150,31 +149,43 @@ void setup() {
   ClearScreen(0, 160, 5);
 
   tft.setTextColor(TFT_YELLOW, TFT_BLACK);  // Note: the new fonts do not draw the background colour
-  // connect to wifi
   tft.setCursor(0, 5);
-  tft.println("[WiFi]Connecting to: ");
-  tft.print("[WiFi]" + String(ssid));
+
+  // connect to wifi
+  tft.print("[Wi-Fi]" + String(ssid));
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     tft.print(".");
   }
-  tft.println();
-  tft.println("[WiFi]Connected!");
-  // tft.println("[WiFi]IP: "+WiFi.localIP());
+  tft.println("ok");
 
   // setup ntp server
-  tft.println("[NTP server]Setting up...");
+  tft.println("[NTP]Setup");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
-  tft.println("[NTP server]Done.");
 
-  // setup dht11
-  // tft.println("[DHT11]Setting up...");
-  // dht.setup(dhtPin, DHTesp::DHT11);
-  // tft.println("[DHT11]Done.");
+  // setup online data for first time
+  // open weather
+  tft.print("[OpenWeather]Updating...");
+  OpenWeatherGetInfo();
+  tft.println("ok");
+  // twse
+  tft.print("[TWSE]Updating");
+  for (uint8_t i = 0; i < STOCK_SIZE; i++) {
+    TWSEGetInfo(i);
+    tft.print(".");
+  }
+  tft.println("ok");
+  // currency
+  tft.print("[Currency]Updating...");
+  CurrencyGetInfo();
+  currencyPricesPrevious[0] = currencyPrices[0];
+  currencyPricesPrevious[1] = currencyPrices[1];
+  tft.println("ok");
 
   // setup complete
-  tft.println("[System]Welcome!");
+  tft.println("Welcome to ML-Display!");
+  delay(1000);
   ChangeScreenState(MainScreen);
 }
 
@@ -201,10 +212,13 @@ void loop() {
   }
 
   if (!isTWSEInfoUpdated) {
-    for (uint8_t i = 0; i < STOCK_SIZE; i++) {
-      TWSEGetInfo(i);
-    }
+    TWSEGetInfo(stockCurrentIndex);
     isTWSEInfoUpdated = true;
+  }
+
+  if (!isCurrencyInfoUpdated) {
+    CurrencyGetInfo();
+    isCurrencyInfoUpdated = true;
   }
 }
 
@@ -229,15 +243,9 @@ void ChangeScreenState(ScreenState targetScreenState) {
   // print first screen
   switch (screenState) {
     case MainScreen:
-      // temperaturePrevious = 0; // set temperature & humidity to 0 to force print
-      // humidityPrevious = 0;
-      // DHTGetTempAndHumi(new TimerHandle_t); // run once at start
-
       isOpenWeatherInfoUpdated = false;
-      isTWSEInfoUpdated = false;
-
+      isCurrencyInfoUpdated = false;
       StartTimer("timerNTP", 500, NTPGetTime);
-      // StartTimer("timerWeather", 5000, DHTGetTempAndHumi);
       break;
     case PlayerScreen:
       TFTPrintPlayerState();
@@ -289,6 +297,9 @@ void NTPGetTime(TimerHandle_t xTimer) {
   if (timeinfo.tm_hour != hourPrevious) {
     if (screenState == MainScreen) {
       isOpenWeatherInfoUpdated = false;
+      if (timeinfo.tm_hour == 9) {
+        isCurrencyInfoUpdated = false;
+      }
     }
 
     hourPrevious = timeinfo.tm_hour;
@@ -296,12 +307,29 @@ void NTPGetTime(TimerHandle_t xTimer) {
 
   // update by min
   if (timeinfo.tm_min != minPrevious) {
-    // print time hh:mm
-    TFTPrintTime();
+    if (screenState == MainScreen) {
+      // print time hh:mm
+      TFTPrintTime();
 
-    if (timeinfo.tm_wday > 0 && timeinfo.tm_wday < 6) {
-      if ((timeinfo.tm_hour == 9 && timeinfo.tm_min >= 0) || (timeinfo.tm_hour >= 10 && timeinfo.tm_hour < 13) || (timeinfo.tm_hour == 13 && timeinfo.tm_min <= 30)) {
-        isTWSEInfoUpdated = false;
+      // print Finance Info (scheduled)
+      if (timeinfo.tm_wday > 0 && timeinfo.tm_wday < 6) {
+        if ((timeinfo.tm_hour < 9) || (timeinfo.tm_hour >= 13 && timeinfo.tm_min > 31)) {
+          if (timeinfo.tm_min % FINANCE_TOTAL_SIZE < STOCK_SIZE) {
+            stockCurrentIndex = timeinfo.tm_min % STOCK_SIZE;
+            isTWSEInfoPrinted = false;
+          } else {
+            currencyCurrentIndex = (timeinfo.tm_min - STOCK_SIZE) % CURRENCY_SIZE;
+            isCurrencyInfoPrinted = false;
+          }
+        }
+      } else {
+        if (timeinfo.tm_min % FINANCE_TOTAL_SIZE < STOCK_SIZE) {
+          stockCurrentIndex = timeinfo.tm_min % STOCK_SIZE;
+          isTWSEInfoPrinted = false;
+        } else {
+          currencyCurrentIndex = (timeinfo.tm_min - STOCK_SIZE) % CURRENCY_SIZE;
+          isCurrencyInfoPrinted = false;
+        }
       }
     }
 
@@ -311,17 +339,41 @@ void NTPGetTime(TimerHandle_t xTimer) {
 
   // update by sec
   if (timeinfo.tm_sec != secPrevious) {
-    // blink ":"
-    TFTPrintSecBlink();
-    TFTPrintTimeSec();
-
     if (screenState == MainScreen) {
+      // blink ":"
+      TFTPrintSecBlink();
+      TFTPrintTimeSec();
+
+      // print open weather info
       if (!isOpenWeatherInfoPrinted) {
         TFTPrintOpenWeatherInfo();
         isOpenWeatherInfoPrinted = true;
       }
-      if (timeinfo.tm_sec % 15 == 0) {
-        TFTPrintTWSEInfo(timeinfo.tm_sec / 15 % STOCK_SIZE);
+
+      // print twse info
+      if (!isTWSEInfoPrinted) {
+        TFTPrintTWSEInfo(stockCurrentIndex);
+        isTWSEInfoPrinted = true;
+      }
+
+      // print currency info
+      if (!isCurrencyInfoPrinted) {
+        TFTPrintCurrencyInfo(currencyCurrentIndex);
+        isCurrencyInfoPrinted = true;
+      }
+
+      // update twse info (scheduled)
+      if ((timeinfo.tm_wday > 0 && timeinfo.tm_wday < 6) && ((timeinfo.tm_hour >= 9 && timeinfo.tm_hour < 13) || (timeinfo.tm_hour == 13 && timeinfo.tm_min <= 31))) {
+        if (timeinfo.tm_sec % 5 == 0) {
+          stockCurrentIndex = timeinfo.tm_min % STOCK_SIZE;
+          isTWSEInfoUpdated = false;
+        }
+        if (timeinfo.tm_min % FINANCE_TOTAL_SIZE < STOCK_SIZE) {
+          if (timeinfo.tm_sec % 5 == 2 && timeinfo.tm_sec > 0) {
+            stockCurrentIndex = timeinfo.tm_min % STOCK_SIZE;
+            isTWSEInfoPrinted = false;
+          }
+        }
       }
     }
 
@@ -379,6 +431,31 @@ void TWSEGetInfo(int stockIndex) {
 
     stockPriceChanges_amount[stockIndex] = stockCurrentPrices[stockIndex] - stockYesterdayPrices[stockIndex];
     stockPriceChanges_percent[stockIndex] = (stockCurrentPrices[stockIndex] / stockYesterdayPrices[stockIndex] - 1.0) * 100;
+  } else {
+    Serial.println("Error getting JSON data");
+  }
+
+  // Turn off http client
+  http.end();
+}
+
+void CurrencyGetInfo() {
+  // Make an HTTP request
+  HTTPClient http;
+  http.begin(currencyUrl);  // replace with your URL
+  int httpCode = http.GET();
+
+  if (httpCode == HTTP_CODE_OK) {
+    // Parse the JSON response
+    String payload = http.getString();
+    DynamicJsonDocument doc(4096);
+    deserializeJson(doc, payload);
+
+    currencyPricesPrevious[0] = currencyPrices[0];
+    currencyPricesPrevious[1] = currencyPrices[1];
+
+    currencyPrices[0] = doc["rates"]["TWD"].as<float>() / doc["rates"]["JPY"].as<float>();
+    currencyPrices[1] = doc["rates"]["TWD"].as<float>() / doc["rates"]["USD"].as<float>();
   } else {
     Serial.println("Error getting JSON data");
   }
@@ -514,7 +591,7 @@ void TFTPrintDate() {
 // **Weather**
 void TFTPrintOpenWeatherInfo() {
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString("                                    ", xpos, ypos + 72, 2);
+  tft.drawString("                                    ", xpos, ypos + 70, 2);
 
   tft.loadFont(Cubic12);
 
@@ -568,10 +645,10 @@ int TextColorByHumidity(float humi) {
 }
 
 // **Stock**
-void TFTPrintTWSEInfo(int stockIndex) {
+void TFTPrintTWSEInfo(uint8_t stockIndex) {
   tft.setTextColor(0xFFFF, TFT_BLACK);
   tft.drawString("                                              ", xpos, ypos + 90, 2);
-  tft.drawString("                                              ", xpos, ypos + 111, 2);
+  tft.drawString("                                              ", xpos, ypos + 110, 2);
 
   tft.loadFont(Cubic12);
 
@@ -582,6 +659,25 @@ void TFTPrintTWSEInfo(int stockIndex) {
                    + (stockNumbers[stockIndex].startsWith("0") ? "ETF" : ""),
                  xpos + 5, ypos + 92);
 
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString(String(stockCurrentPrices[stockIndex], 2), xpos + 5, ypos + 112);
+
+  tft.setTextColor(TextColorByAmount(stockPriceChanges_amount[stockIndex]), TFT_BLACK);
+  tft.drawString((stockPriceChanges_amount[stockIndex] >= 0 ? "+" : "")
+                   + String(stockPriceChanges_amount[stockIndex], 2)
+                   + "(" + String(stockPriceChanges_percent[stockIndex], 2) + "%)",
+                 xpos + 65, ypos + 112);
+
+  tft.unloadFont();
+}
+
+void TFTPrintTWSEInfo_PriceOnly(uint8_t stockIndex) {
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString("                                              ", xpos, ypos + 110, 2);
+
+  tft.loadFont(Cubic12);
+
+  // print
   tft.setTextColor(TextColorByAmount(stockPriceChanges_amount[stockIndex]), TFT_BLACK);
   tft.drawString(String(stockCurrentPrices[stockIndex], 2), xpos + 5, ypos + 112);
   tft.drawString((stockPriceChanges_amount[stockIndex] >= 0 ? "+" : "")
@@ -600,6 +696,31 @@ int TextColorByAmount(float amount) {
   } else {
     return 0xFFFF;  // green blue
   }
+}
+
+// **Currency**
+void TFTPrintCurrencyInfo(uint8_t currencyIndex) {
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString("                                              ", xpos, ypos + 90, 2);
+  tft.drawString("                                              ", xpos, ypos + 110, 2);
+
+  tft.loadFont(Cubic12);
+
+  // print
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString(currencyNames[currencyIndex], xpos + 5, ypos + 92);
+
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString(String(currencyPrices[currencyIndex], 4), xpos + 5, ypos + 112);
+
+  float changeAmount = currencyPrices[currencyIndex] - currencyPricesPrevious[currencyIndex];
+  tft.setTextColor(TextColorByAmount(changeAmount), TFT_BLACK);
+  tft.drawString((changeAmount >= 0 ? "+" : "")
+                   + String(changeAmount, 4)
+                   + "(" + String((currencyPrices[currencyIndex] / currencyPricesPrevious[currencyIndex] - 1.0) * 100, 2) + "%)",
+                 xpos + 65, ypos + 112);
+
+  tft.unloadFont();
 }
 
 // **Player**
