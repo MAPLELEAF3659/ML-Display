@@ -10,13 +10,13 @@
 #include "secrets.h"
 #include "wifi_info.h"
 
-#define FINANCE_TOTAL_COUNT 5 // stock + currency
+#define FINANCE_TOTAL_COUNT 5  // stock + currency
 #define STOCK_COUNT 3
 
 /*
 **Upload settings**
 Board: ESP32 Dev Module
-Partition Scheme: 16MB Flash(3MB APP/9.9MB FATFS)
+Partition Scheme: Custom(using partitions.csv)
 Flash Size: 16MB
 Upload Speed: 921600
 */
@@ -70,7 +70,8 @@ String descriptionOpenWeather = "";
 
 //**Finance data**
 String twseUrl = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_";
-String currencyUrl = "https://open.er-api.com/v6/latest/TWD";
+String currencyUrlLatest = "https://api.currencyapi.com/v3/latest?apikey=" + String(CURRENCY_API_KEY) + "&base_currency=TWD&currencies=JPY,USD";
+String currencyUrlHistorical = "https://api.currencyapi.com/v3/historical?apikey=" + String(CURRENCY_API_KEY) + "&base_currency=TWD&currencies=JPY,USD&date=";
 bool isTWSEInfoUpdated = false;
 bool isCurrencyInfoUpdated = false;
 bool isFinanceInfoPrinted = true;
@@ -144,7 +145,7 @@ void setup() {
   tft.setCursor(0, 5);
 
   // connect to wifi
-  tft.print("[Wi-Fi]" + String(ssid));
+  tft.print("[Wi-Fi] " + String(ssid));
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -153,26 +154,26 @@ void setup() {
   tft.println("ok");
 
   // setup ntp server
-  tft.println("[NTP]Setup");
+  tft.print("[NTP] Setting up...");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
+  getLocalTime(&timeinfo);
+  tft.println("ok");
 
   // setup online data for first time
   // open weather
-  tft.print("[OpenWeather]Updating...");
+  tft.print("[OpenWeather] Updating...");
   OpenWeatherGetInfo();
   tft.println("ok");
   // twse
-  tft.print("[Finance]Updating");
+  tft.print("[Finance] Updating");
   CurrencyGetInfo();
   for (uint8_t i = 0; i < FINANCE_TOTAL_COUNT; i++) {
     if (i < STOCK_COUNT) {
       TWSEGetInfo(i);
-    } else {
-      financeYesterdayPrices[i] = financePrices[i];
+      delay(2000);
     }
     tft.print(".");
   }
-  tft.print(".");
   tft.println("ok");
 
   // setup complete
@@ -285,7 +286,7 @@ void NTPGetTime(TimerHandle_t xTimer) {
   if (timeinfo.tm_hour != hourPrevious) {
     if (screenState == MainScreen) {
       isOpenWeatherInfoUpdated = false;
-      if (timeinfo.tm_hour == 10) {
+      if (timeinfo.tm_hour == 9) {
         isCurrencyInfoUpdated = false;
       }
     }
@@ -420,22 +421,22 @@ void TWSEGetInfo(int index) {
 }
 
 void CurrencyGetInfo() {
-  // Make an HTTP request
   HTTPClient http;
-  http.begin(currencyUrl);  // replace with your URL
-  int httpCode = http.GET();
+  int httpCode;
+
+  // Make an HTTP request
+  http.begin(currencyUrlLatest);  // replace with your URL
+  httpCode = http.GET();
 
   if (httpCode == HTTP_CODE_OK) {
     // Parse the JSON response
     String payload = http.getString();
-    DynamicJsonDocument doc(4096);
+    DynamicJsonDocument doc(1024);
     deserializeJson(doc, payload);
 
-    if (doc["result"].as<String>() == "success") {
-      for (uint8_t i = STOCK_COUNT; i < FINANCE_TOTAL_COUNT; i++) {
-        financeYesterdayPrices[i] = financePrices[i];
-        financePrices[i] = doc["rates"]["TWD"].as<float>() / doc["rates"][financeNumbers[i].substring(3)].as<float>();
-      }
+    for (uint8_t i = STOCK_COUNT; i < FINANCE_TOTAL_COUNT; i++) {
+      financeYesterdayPrices[i] == financePrices[i];
+      financePrices[i] = 1 / doc["data"][financeNumbers[i].substring(3)]["value"].as<float>();
     }
   } else {
     Serial.println("Error getting JSON data");
@@ -443,6 +444,39 @@ void CurrencyGetInfo() {
 
   // Turn off http client
   http.end();
+
+  // for first time setup
+  if (financeYesterdayPrices[STOCK_COUNT] == 0) {
+    // calculate yesterday date
+    time_t now;
+    struct tm yesterday;
+    char yesterdayDate[11];
+    time(&now);
+    // if time is not Currency API update time(UTC+8 08:00), use the day before yesterday
+    now -= 86400 + (timeinfo.tm_hour > 8 ? 86400 : 0);
+    localtime_r(&now, &yesterday);
+    strftime(yesterdayDate, sizeof(yesterdayDate), "%Y-%m-%d", &yesterday);
+
+    // Make an HTTP request
+    http.begin(currencyUrlHistorical + yesterdayDate);  // replace with your URL
+    httpCode = http.GET();
+
+    if (httpCode == HTTP_CODE_OK) {
+      // Parse the JSON response
+      String payload = http.getString();
+      DynamicJsonDocument doc(1024);
+      deserializeJson(doc, payload);
+
+      for (uint8_t i = STOCK_COUNT; i < FINANCE_TOTAL_COUNT; i++) {
+        financeYesterdayPrices[i] = 1 / doc["data"][financeNumbers[i].substring(3)]["value"].as<float>();
+      }
+    } else {
+      Serial.println("Error getting JSON data");
+    }
+
+    // Turn off http client
+    http.end();
+  }
 
   isCurrencyInfoUpdated = true;
 }
