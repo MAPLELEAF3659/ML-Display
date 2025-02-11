@@ -5,13 +5,18 @@
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 #include "time.h"
-// #include "DHTesp.h"
 #include <queue>
 #include "secrets.h"
 #include "wifi_info.h"
 
 #define FINANCE_TOTAL_COUNT 5  // stock + currency
 #define STOCK_COUNT 3
+
+enum ScreenState {
+  NoneScreen = -1,
+  MainScreen,
+  PlayerScreen
+};
 
 /*
 **Upload settings**
@@ -20,6 +25,8 @@ Partition Scheme: Custom(using partitions.csv)
 Flash Size: 16MB
 Upload Speed: 921600
 */
+
+// GND=GND VCC=3V3 SCL=G14 SDA=G15 RES=G33 DC=G27 CS=G5 BL=G22
 
 //**WiFi**
 const char *ssid = WIFI_SSID;
@@ -36,7 +43,7 @@ uint8_t secPrevious, minPrevious, hourPrevious, dayPrevious;
 
 //**TFT**
 TFT_eSPI tft = TFT_eSPI();  // Invoke library, pins defined in User_Setup.h
-// GND=GND VCC=3V3 SCL=G14 SDA=G15 RES=G33 DC=G27 CS=G5 BL=G22
+ScreenState screenState = NoneScreen;
 uint8_t xpos = 5;
 uint8_t ypos = 5;
 /*
@@ -124,13 +131,6 @@ int songMetadataYPosOffset = 58;
 //**Timer**
 std::queue<TimerHandle_t> timers;
 //**Timer**
-
-enum ScreenState {
-  NoneScreen = -1,
-  MainScreen,
-  PlayerScreen
-};
-ScreenState screenState = NoneScreen;
 
 void setup() {
   Serial.begin(115200);
@@ -326,25 +326,23 @@ void NTPGetTime(TimerHandle_t xTimer) {
       // update twse info (scheduled)
       if ((timeinfo.tm_wday > 0 && timeinfo.tm_wday < 6) && ((timeinfo.tm_hour >= 9 && timeinfo.tm_hour < 14))) {
         if (timeinfo.tm_min % FINANCE_TOTAL_COUNT < STOCK_COUNT) {
-          if (timeinfo.tm_hour == 13) {
-            if (timeinfo.tm_min <= 30) {
-              // schedule for print on %5sec(exclude 0)
-              if (timeinfo.tm_sec % 5 == 0 && timeinfo.tm_sec > 0) {
-                financeIndex = timeinfo.tm_min % FINANCE_TOTAL_COUNT;
-                isFinanceInfoPrintPriceOnly = true;
-                isFinanceInfoPrinted = false;
-              }
-              // schedule for update on every %5+1sec(ex.1,6,11,11...)
-              if (timeinfo.tm_sec % 5 == 1) {
-                financeIndex = timeinfo.tm_min % FINANCE_TOTAL_COUNT;
-                isTWSEInfoUpdated = false;
-              }
-            } else {
-              // schedule for update on 56sec
-              if (timeinfo.tm_sec == 56) {
-                financeIndex = timeinfo.tm_min % FINANCE_TOTAL_COUNT;
-                isTWSEInfoUpdated = false;
-              }
+          if (timeinfo.tm_hour == 13 && timeinfo.tm_min > 30) {
+            // schedule for update on 56sec
+            if (timeinfo.tm_sec == 56) {
+              financeIndex = timeinfo.tm_min % FINANCE_TOTAL_COUNT;
+              isTWSEInfoUpdated = false;
+            }
+          } else {
+            // schedule for print on %5sec(exclude 0)
+            if (timeinfo.tm_sec % 5 == 0 && timeinfo.tm_sec > 0) {
+              financeIndex = timeinfo.tm_min % FINANCE_TOTAL_COUNT;
+              isFinanceInfoPrintPriceOnly = true;
+              isFinanceInfoPrinted = false;
+            }
+            // schedule for update on every %5+1sec(ex.1,6,11,11...)
+            if (timeinfo.tm_sec % 5 == 1) {
+              financeIndex = timeinfo.tm_min % FINANCE_TOTAL_COUNT;
+              isTWSEInfoUpdated = false;
             }
           }
         }
