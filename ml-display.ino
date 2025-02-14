@@ -11,7 +11,14 @@
 
 #define FINANCE_TOTAL_COUNT 5 // stock + currency
 #define STOCK_COUNT 3
+
 #define TIMER_COUNT 4
+#define TASK_COUNT 1
+
+#define PERIOD_MS_TWSE_UPDATE 5000
+#define PERIOD_MS_OPEN_WEATHER_UPDATE 3600000
+#define PERIOD_MS_CURRENCY_UPDATE 86400000
+#define PERIOD_MS_FINANCE_PRINT 60000
 
 /*
 **Upload settings**
@@ -23,9 +30,22 @@ Upload Speed: 921600
 
 // GND=GND VCC=3V3 SCL=G14 SDA=G15 RES=G33 DC=G27 CS=G5 BL=G22
 
-//**Timer**
-TimerHandle_t timers[TIMER_COUNT];
-//**Timer**
+//**FreeRTOS**
+TimerHandle_t timers[TIMER_COUNT]; //  twse, open_weather, currency, finance
+TaskHandle_t tasks[TASK_COUNT];    // twse_all
+enum RemainingMSCalculationType
+{
+  NextHour,
+  NextMinute,
+  Next9oclock,
+};
+typedef struct ScheduleTimerTaskParam_t
+{
+  TimerHandle_t timer;
+  RemainingMSCalculationType scheduleType;
+};
+
+//**FreeRTOS**
 
 //**WiFi**
 const char *ssid = WIFI_SSID;
@@ -54,8 +74,6 @@ uint8_t x_pad = 5, y_pad = 5;
 
 //**Open weather data**
 String openWeatherApiUrl = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/O-A0001-001?Authorization=" + String(OPEN_WEATHER_DATA_API_KEY) + "&format=JSON&StationId=C0AI30&WeatherElement=Weather,AirTemperature,RelativeHumidity";
-bool isWeatherUpdated = false;
-bool isWeatherPrinted = true;
 float weatherTemp = 0;
 float weatherHumi = 0;
 String weatherDesc = "";
@@ -65,10 +83,6 @@ String weatherDesc = "";
 String twseApiUrl = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_";
 String currencyApiUrlLatest = "https://api.currencyapi.com/v3/latest?apikey=" + String(CURRENCY_API_KEY) + "&base_currency=TWD&currencies=JPY,USD";
 String currencyApiUrlHistorical = "https://api.currencyapi.com/v3/historical?apikey=" + String(CURRENCY_API_KEY) + "&base_currency=TWD&currencies=JPY,USD&date=";
-bool isTWSEUpdated = false;
-bool isCurrencyUpdated = false;
-bool isFinancePrinted = true;
-bool isFinancePrintPriceOnly = false;
 uint8_t financeIndex = -1;
 // si_ = stock index; se_ = stock ETF; sn_ = stock normal; cu_ = currency;
 String financeNumbers[FINANCE_TOTAL_COUNT] = {"si_t00", "se_0050", "sn_2330", "cu_JPY", "cu_USD"};
@@ -148,17 +162,25 @@ void setup()
   tft.print("[OpenWeather] Updating...");
   HttpGetOpenWeatherInfo();
   tft.println("ok");
-  // twse
-  tft.print("[Finance] Updating...");
+  // TWSE
+  tft.print("[TWSE] Updating");
+  xTaskCreate(UpdateTWSEInfo_All, "update_all_twse_info", 4096, (void *)1, tskIDLE_PRIORITY, &tasks[0]);
+  while (financeYesterdayPrices[STOCK_COUNT - 1] == 0)
+  {
+    tft.print(".");
+    delay(2000);
+  }
+  tft.println("ok");
+  // currency
+  tft.print("[Currency] Updating...");
   HttpGetCurrencyInfo();
-  UpdateTWSEInfo_All();
   tft.println("ok");
 
   tft.print("[Timer] Creating timers...");
-  timers[0] = xTimerCreate("update_print_open_weather", pdMS_TO_TICKS(3600000), pdTRUE, (void *)0, UpdateAndPrintOpenWeatherInfo); // 1h
-  timers[1] = xTimerCreate("update_twse", pdMS_TO_TICKS(5000), pdTRUE, (void *)1, UpdateTWSEInfo);                                 // 5s
-  timers[2] = xTimerCreate("update_currency", pdMS_TO_TICKS(86400000), pdTRUE, (void *)2, UpdateCurrencyInfo);                     // 24h
-  timers[3] = xTimerCreate("print_finance", pdMS_TO_TICKS(60000), pdTRUE, (void *)3, UpdateCurrencyInfo);                          // 1m
+  timers[0] = xTimerCreate("update_twse", pdMS_TO_TICKS(PERIOD_MS_TWSE_UPDATE), pdTRUE, (void *)1, UpdateTWSEInfo);
+  timers[1] = xTimerCreate("update_print_open_weather", pdMS_TO_TICKS(PERIOD_MS_OPEN_WEATHER_UPDATE), pdTRUE, (void *)0, UpdateAndPrintOpenWeatherInfo);
+  timers[2] = xTimerCreate("update_currency", pdMS_TO_TICKS(PERIOD_MS_CURRENCY_UPDATE), pdTRUE, (void *)2, UpdateCurrencyInfo);
+  timers[3] = xTimerCreate("print_finance", pdMS_TO_TICKS(PERIOD_MS_FINANCE_PRINT), pdTRUE, (void *)3, FinanceInfoPrint);
   tft.println("ok");
 
   // setup complete
@@ -223,44 +245,15 @@ void ChangeScreenState(ScreenState targetScreenState)
     TFTPrintTimeSec();
     TFTPrintSecBlink();
     TFTPrintOpenWeatherInfo();
+    financeIndex = 0;
     TFTPrintFinanceInfo(financeIndex);
 
-    time_t nowEpoch = mktime(&timeinfo);
-    
-    struct tm nextHourTM = timeinfo;
-    // setup for next hour
-    if (timeinfo.tm_hour == 23)
-    {
-      nextHourTM.tm_hour = 0;
-      nextHourTM.tm_mday += 1;
-    }
-    else
-    {
-      nextHourTM.tm_hour += 1;
-    }
-    nextHourTM.tm_min = 0;
-    nextHourTM.tm_sec = 0;
-    time_t nextHourEpoch = mktime(&nextHourTM);
-    xTimerStart(timers[0], pdMS_TO_TICKS(difftime(nextHourEpoch, nowEpoch) * 1000UL));
-
-    // setup for next TWSE opening
     if (isTWSEOpening)
-      xTimerStart(timers[1], 0);
+      xTimerStart(timers[0], 0); // twse
 
-    // setup for next 09:00
-    struct tm next9oclockTM = timeinfo;
-    if (timeinfo.tm_hour >= 9)
-    {
-      next9oclockTM.tm_mday += 1;
-    }
-    next9oclockTM.tm_hour = 9;
-    next9oclockTM.tm_min = 0;
-    next9oclockTM.tm_sec = 0;
-    time_t next9oclockEpoch = mktime(&next9oclockTM);
-    xTimerStart(timers[2], pdMS_TO_TICKS(difftime(next9oclockEpoch, nowEpoch) * 1000UL));
-
-    // setup for next minute
-    xTimerStart(timers[3], pdMS_TO_TICKS((60 - timeinfo.tm_sec) * 1000UL));
+    xTimerChangePeriod(timers[1], pdMS_TO_TICKS(getRemainingMS(NextHour)), 0); // open weather
+    xTimerChangePeriod(timers[2], pdMS_TO_TICKS(getRemainingMS(Next9oclock)), 0); // currency
+    xTimerChangePeriod(timers[3], pdMS_TO_TICKS(getRemainingMS(NextMinute)), 0); // finance print
   }
   break;
   case PlayerScreen:
@@ -296,6 +289,14 @@ void ScreenUpdateMain()
     // print time hh:mm
     TFTPrintTime();
 
+    if (isTWSEOpening() && xTimerIsTimerActive(timers[0]) == pdFALSE)
+      xTimerStart(timers[0], 0);
+    else if (!isTWSEOpening() && xTimerIsTimerActive(timers[0]) != pdFALSE)
+    {
+      xTimerStop(timers[0], 0);
+      xTaskCreate(UpdateTWSEInfo_All, "update_all_twse_info", 4096, (void *)1, tskIDLE_PRIORITY, &tasks[0]);
+    }
+
     // update previous state
     minPrevious = timeinfo.tm_min;
   }
@@ -303,7 +304,6 @@ void ScreenUpdateMain()
   // update by sec
   if (timeinfo.tm_sec != secPrevious)
   {
-    // blink ":"
     TFTPrintSecBlink();
     TFTPrintTimeSec();
 
@@ -319,21 +319,137 @@ void ScreenUpdatePlayer(String msg)
   PlayerInfoUpdate(playerInfoId, value);
 }
 
-void StopAllTimer()
-{
-  for (uint8_t i = 0; i < TIMER_COUNT; i++)
-  {
-    xTimerStop(timers[i], 0);
-  }
-}
-
-// **WebAPI info updater**
+// **timer & task**
 void UpdateAndPrintOpenWeatherInfo(TimerHandle_t xTimer)
 {
   HttpGetOpenWeatherInfo();
   TFTPrintOpenWeatherInfo();
+  if (pdTICKS_TO_MS(xTimerGetPeriod(xTimer)) != PERIOD_MS_OPEN_WEATHER_UPDATE)
+    xTimerChangePeriod(xTimer, PERIOD_MS_OPEN_WEATHER_UPDATE, 0);
 }
 
+void UpdateTWSEInfo(TimerHandle_t xTimer)
+{
+  if (financeIndex < STOCK_COUNT)
+  {
+    if (timeinfo.tm_sec <= 50)
+    {
+      HttpGetTWSEInfo(financeIndex);
+      TFTPrintFinanceInfo_PriceOnly(financeIndex);
+    }
+    else
+    {
+      if (financeIndex + 1 < STOCK_COUNT)
+        HttpGetTWSEInfo(financeIndex + 1);
+    }
+  }
+  else if (financeIndex + 1 == FINANCE_TOTAL_COUNT)
+  {
+    if (timeinfo.tm_sec > 50)
+      HttpGetTWSEInfo(0);
+  }
+}
+
+void UpdateTWSEInfo_All(void *pvParameters)
+{
+  for (uint8_t i = 0; i < STOCK_COUNT; i++)
+  {
+    HttpGetTWSEInfo(i);
+    vTaskDelay(pdMS_TO_TICKS(2000));
+  }
+
+  vTaskDelete(NULL);
+}
+
+void UpdateCurrencyInfo(TimerHandle_t xTimer)
+{
+  HttpGetCurrencyInfo();
+
+  if (pdTICKS_TO_MS(xTimerGetPeriod(xTimer)) != PERIOD_MS_CURRENCY_UPDATE)
+    xTimerChangePeriod(xTimer, PERIOD_MS_CURRENCY_UPDATE, 0);
+}
+
+void FinanceInfoPrint(TimerHandle_t xTimer)
+{
+  if (financeIndex >= FINANCE_TOTAL_COUNT - 1)
+  {
+    financeIndex = 0;
+  }
+  else
+  {
+    financeIndex++;
+  }
+  TFTPrintFinanceInfo(financeIndex);
+
+  if (pdTICKS_TO_MS(xTimerGetPeriod(xTimer)) != PERIOD_MS_FINANCE_PRINT)
+    xTimerChangePeriod(xTimer, PERIOD_MS_FINANCE_PRINT, 0);
+}
+
+void PlayerInfoUpdate(PlayerInfoId infoId, String value)
+{
+  switch (infoId)
+  {
+  case Artist:
+    songArtist = value;
+    TFTPrintPlayerSongMetadata(songArtist, 0);
+    break;
+  case Album:
+    songAlbum = value;
+    TFTPrintPlayerSongMetadata(songAlbum, 1);
+    break;
+  case Title:
+    songTitle = value;
+    TFTPrintPlayerSongMetadata(songTitle, 2);
+    break;
+  case BitDepth:
+    songBitDepth = value;
+    TFTPrintPlayerSongGeneralInfo();
+    break;
+  case Bitrate:
+    songBitrate = value;
+    TFTPrintPlayerSongGeneralInfo();
+    break;
+  case SampleRate:
+    songSampleRate = value;
+    TFTPrintPlayerSongGeneralInfo();
+    break;
+  case Codec:
+    songCodec = value;
+    TFTPrintPlayerSongCodec();
+    break;
+  case Duration:
+    songDuration = value.toFloat();
+    TFTPrintPlayerSongDuration();
+    break;
+  case Position:
+    songPostion = value.toFloat();
+    TFTPrintPlayerSongPosition();
+    break;
+  case PlaybackState:
+    switch (value[1])
+    {
+    case 'l':
+      playerState = Playing;
+      break;
+    case 'a':
+      playerState = Paused;
+      break;
+    case 't':
+      playerState = Stopped;
+      break;
+    }
+    TFTPrintPlayerState();
+    break;
+  case LyricCurrent:
+    songCurrentLyric = value;
+    TFTPrintPlayerSongCurrentLyric();
+    break;
+  default:
+    break;
+  }
+}
+
+// **HTTP Get**
 void HttpGetOpenWeatherInfo()
 {
   // Make an HTTP request
@@ -370,20 +486,6 @@ void HttpGetOpenWeatherInfo()
   http.end();
 }
 
-void UpdateTWSEInfo(TimerHandle_t xTimer)
-{
-  HttpGetTWSEInfo(financeIndex);
-}
-
-void UpdateTWSEInfo_All()
-{
-  for (uint8_t i = 0; i < STOCK_COUNT; i++)
-  {
-    HttpGetTWSEInfo(financeIndex);
-    delay(2000);
-  }
-}
-
 void HttpGetTWSEInfo(int index)
 {
   // Make an HTTP request
@@ -411,13 +513,6 @@ void HttpGetTWSEInfo(int index)
 
   // Turn off http client
   http.end();
-
-  isTWSEUpdated = true;
-}
-
-void UpdateCurrencyInfo(TimerHandle_t xTimer)
-{
-  HttpGetCurrencyInfo();
 }
 
 void HttpGetCurrencyInfo()
@@ -485,85 +580,6 @@ void HttpGetCurrencyInfo()
 
     // Turn off http client
     http.end();
-  }
-
-  isCurrencyUpdated = true;
-}
-
-void FinanceInfoPrint(TimerHandle_t xTimer)
-{
-  if (financeIndex > FINANCE_TOTAL_COUNT)
-  {
-    financeIndex = 0;
-  }
-  else
-  {
-    financeIndex++;
-  }
-  TFTPrintFinanceInfo(financeIndex);
-}
-
-void PlayerInfoUpdate(PlayerInfoId infoId, String value)
-{
-  switch (infoId)
-  {
-  case Artist:
-    songArtist = value;
-    TFTPrintPlayerSongMetadata(songArtist, 0);
-    break;
-  case Album:
-    songAlbum = value;
-    TFTPrintPlayerSongMetadata(songAlbum, 1);
-    break;
-  case Title:
-    songTitle = value;
-    TFTPrintPlayerSongMetadata(songTitle, 2);
-    break;
-  case BitDepth:
-    songBitDepth = value;
-    TFTPrintPlayerSongGeneralInfo();
-    break;
-  case Bitrate:
-    songBitrate = value;
-    TFTPrintPlayerSongGeneralInfo();
-    break;
-  case SampleRate:
-    songSampleRate = value;
-    TFTPrintPlayerSongGeneralInfo();
-    break;
-  case Codec:
-    songCodec = value;
-    TFTPrintPlayerSongCodec();
-    break;
-  case Duration:
-    songDuration = value.toFloat();
-    TFTPrintPlayerSongDuration();
-    break;
-  case Position:
-    songPostion = value.toFloat();
-    TFTPrintPlayerSongPosition();
-    break;
-  case PlaybackState:
-    switch (value[1])
-    {
-    case 'l':
-      playerState = Playing;
-      break;
-    case 'a':
-      playerState = Paused;
-      break;
-    case 't':
-      playerState = Stopped;
-      break;
-    }
-    TFTPrintPlayerState();
-    break;
-  case LyricCurrent:
-    songCurrentLyric = value;
-    TFTPrintPlayerSongCurrentLyric();
-    break;
-  default:
-    break;
   }
 }
 
@@ -721,39 +737,55 @@ int TextColorByHumidity(float humi)
 void TFTPrintFinanceInfo(uint8_t index)
 {
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  if (!isFinancePrintPriceOnly)
-  {
-    tft.drawString("                                              ", x_pad, y_pad + 90, 2);
-  }
+  tft.drawString("                                              ", x_pad, y_pad + 90, 2);
   tft.drawString("                                              ", x_pad, y_pad + 110, 2);
 
   tft.loadFont(Cubic12);
 
   // print name
-  if (!isFinancePrintPriceOnly)
+  String number, type;
+  // if number is not index or currency, then print its stock number
+  if (!(financeNumbers[index].startsWith("si_") || financeNumbers[index].startsWith("cu_")))
   {
-    String number, type;
-    // if number is not index or currency, then print its stock number
-    if (!(financeNumbers[index].startsWith("si_") || financeNumbers[index].startsWith("cu_")))
-    {
-      number = financeNumbers[index].substring(3) + "  ";
-    }
-    if (financeNumbers[index].startsWith("se_"))
-    {
-      type = "ETF";
-    }
-    else if (financeNumbers[index].startsWith("si_"))
-    {
-      type = "INDEX";
-    }
-    tft.setTextColor(0xFFFF, TFT_BLACK);
-    tft.drawString(financeNames[index] + "  " + number + type, x_pad + 5, y_pad + 92);
+    number = financeNumbers[index].substring(3) + "  ";
   }
+  if (financeNumbers[index].startsWith("se_"))
+  {
+    type = "ETF";
+  }
+  else if (financeNumbers[index].startsWith("si_"))
+  {
+    type = "INDEX";
+  }
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString(financeNames[index] + "  " + number + type, x_pad + 5, y_pad + 92);
 
   // print price
   tft.setTextColor(0xFFFF, TFT_BLACK);
   tft.drawString(String(financePrices[index], index < STOCK_COUNT ? 2 : 4), x_pad + 5, y_pad + 112);
 
+  // print price change
+  float changeAmount = financePrices[index] - financeYesterdayPrices[index];
+  float changePercent = (financePrices[index] / financeYesterdayPrices[index] - 1.0) * 100;
+  tft.setTextColor(TextColorByAmount(changeAmount), TFT_BLACK);
+  tft.drawString((changeAmount >= 0 ? "+" : "") + String(changeAmount, index < STOCK_COUNT ? 2 : 4) + "(" + String(abs(changePercent), changePercent >= 10 ? 1 : 2) + "%)",
+                 x_pad + 65, y_pad + 112);
+
+  tft.unloadFont();
+}
+
+void TFTPrintFinanceInfo_PriceOnly(uint8_t index)
+{
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString("                                              ", x_pad, y_pad + 110, 2);
+
+  tft.loadFont(Cubic12);
+
+  // print price
+  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.drawString(String(financePrices[index], index < STOCK_COUNT ? 2 : 4), x_pad + 5, y_pad + 112);
+
+  // print price change
   float changeAmount = financePrices[index] - financeYesterdayPrices[index];
   float changePercent = (financePrices[index] / financeYesterdayPrices[index] - 1.0) * 100;
   tft.setTextColor(TextColorByAmount(changeAmount), TFT_BLACK);
@@ -922,9 +954,54 @@ void ClearScreen(int startPoint, int endPoint, int perUnit)
   tft.setCursor(0, 0);
 }
 
+void StopAllTimer()
+{
+  for (uint8_t i = 0; i < TIMER_COUNT; i++)
+  {
+    if (timers[i] != NULL)
+      xTimerStop(timers[i], 0);
+  }
+}
+
 bool isTWSEOpening()
 {
-  return (timeinfo.tm_wday > 0 && timeinfo.tm_wday < 6) &&
-         ((timeinfo.tm_hour >= 9 && timeinfo.tm_hour < 13) ||
-          (timeinfo.tm_hour == 13 && timeinfo.tm_min <= 30));
+  return ((timeinfo.tm_wday > 0 && timeinfo.tm_wday < 6) &&
+          ((timeinfo.tm_hour >= 9 && timeinfo.tm_hour < 13) ||
+           (timeinfo.tm_hour == 13 && timeinfo.tm_min <= 30)));
+}
+
+double getRemainingMS(RemainingMSCalculationType type)
+{
+  getLocalTime(&timeinfo);
+  time_t nowEpoch = mktime(&timeinfo);
+  struct tm nextTM = timeinfo;
+  switch (type)
+  {
+  case NextMinute:
+  {
+    nextTM.tm_min += 1;
+    nextTM.tm_sec = 0;
+  }
+  break;
+  case NextHour:
+  {
+    nextTM.tm_hour += 1;
+    nextTM.tm_min = 0;
+    nextTM.tm_sec = 0;
+  }
+  break;
+  case Next9oclock:
+  {
+    if (timeinfo.tm_hour >= 9)
+    {
+      nextTM.tm_mday += 1;
+    }
+    nextTM.tm_hour = 9;
+    nextTM.tm_min = 0;
+    nextTM.tm_sec = 0;
+  }
+  break;
+  }
+  time_t nextEpoch = mktime(&nextTM);
+  return difftime(nextEpoch, nowEpoch) * 1000UL;
 }
