@@ -1,3 +1,4 @@
+.pio
 .vscode
-build
-secrets.h
+include/secrets.h
+include/wifi_info.h
