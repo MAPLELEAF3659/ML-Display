@@ -5,8 +5,8 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include <Preferences.h>
 #include "time.h"
-#include <queue>
 #include "secrets.h"
 #include "wifi_info.h"
 
@@ -32,7 +32,7 @@ Upload Speed: 921600
 
 //**FreeRTOS**
 TaskHandle_t taskHttpGetWeather, taskHttpGetTWSE, taskHttpGetCurrency;
-
+Preferences preferences;
 //**FreeRTOS**
 
 //**WiFi**
@@ -69,14 +69,14 @@ String weatherDesc = "";
 //**Open weather data**
 
 //**Finance data**
-String twseApiUrl = "https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_";
 String currencyApiUrlLatest = "https://api.currencyapi.com/v3/latest?apikey=" + String(CURRENCY_API_KEY) + "&base_currency=TWD&currencies=JPY,USD";
 String currencyApiUrlHistorical = "https://api.currencyapi.com/v3/historical?apikey=" + String(CURRENCY_API_KEY) + "&base_currency=TWD&currencies=JPY,USD&date=";
 uint8_t financeIndex = 0;
 bool isFinancePrinted = false;
+int currencyUpdateDateUTC;
 // si_ = stock index; se_ = stock ETF; sn_ = stock normal; cu_ = currency;
 String financeNumbers[FINANCE_TOTAL_COUNT] = {"si_t00", "se_0050", "sn_2330", "cu_JPY", "cu_USD"};
-String financeNames[FINANCE_TOTAL_COUNT] = {"加權指數", "元大台灣50", "台積電", "日幣JPY 兌 台幣TWD", "美元USD 兌 台幣TWD"};
+String financeNames[FINANCE_TOTAL_COUNT] = {"加權指數", "元大台灣50", "台積電", "日幣_台幣 JPY_TWD", "美元_台幣 USD_TWD"};
 float financePrices[FINANCE_TOTAL_COUNT];
 float financeYesterdayPrices[FINANCE_TOTAL_COUNT];
 //**Finanse data**
@@ -132,6 +132,7 @@ void ClearScreen(int startPoint, int endPoint, int perUnit)
 
 bool isTWSEOpening()
 {
+  getLocalTime(&timeinfo);
   return ((timeinfo.tm_wday > 0 && timeinfo.tm_wday < 6) &&
           ((timeinfo.tm_hour >= 9 && timeinfo.tm_hour < 13) ||
            (timeinfo.tm_hour == 13 && timeinfo.tm_min <= 30)));
@@ -142,7 +143,7 @@ enum RemainingMSCalculationType
   NextHour,
   NextMinute,
   Next10sec,
-  Next9oclock,
+  Next8oclock,
 };
 
 double getRemainingMS(RemainingMSCalculationType type)
@@ -167,18 +168,18 @@ double getRemainingMS(RemainingMSCalculationType type)
   {
     nextTM.tm_hour += 1;
     nextTM.tm_min = 0;
-    nextTM.tm_sec = 0;
+    nextTM.tm_sec = 3;
   }
   break;
-  case Next9oclock:
+  case Next8oclock:
   {
     if (timeinfo.tm_hour >= 9)
     {
       nextTM.tm_mday += 1;
     }
-    nextTM.tm_hour = 9;
+    nextTM.tm_hour = 8;
     nextTM.tm_min = 0;
-    nextTM.tm_sec = 0;
+    nextTM.tm_sec = 13;
   }
   break;
   }
@@ -391,11 +392,12 @@ void TFTPrintFinanceInfo(uint8_t index)
 
   // print name
   String number, type;
-  // if number is not index or currency, then print its stock number
-  if (!(financeNumbers[index].startsWith("si_") || financeNumbers[index].startsWith("cu_")))
+  // if number is stock in normal or etf, then print its stock number
+  if ((financeNumbers[index].startsWith("sn_") || financeNumbers[index].startsWith("se_")))
   {
     number = financeNumbers[index].substring(3) + "  ";
   }
+  // if number is stock in etf or index, then print its stock type
   if (financeNumbers[index].startsWith("se_"))
   {
     type = "ETF";
@@ -408,11 +410,19 @@ void TFTPrintFinanceInfo(uint8_t index)
   tft.drawString(financeNames[index] + "  " + number + type, x_pad + 5, y_pad + 92);
 
   // print price
-  tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString(String(financePrices[index], index < STOCK_COUNT ? 2 : 4), x_pad + 5, y_pad + 112);
+  if (financePrices[index])
+  {
+    tft.setTextColor(0xFFFF, TFT_BLACK);
+    tft.drawString(String(financePrices[index], index < STOCK_COUNT ? 2 : 4), x_pad + 5, y_pad + 112);
+  }
+  else
+  {
+    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
+    tft.drawString("--", x_pad + 5, y_pad + 112);
+  }
 
   // print price change
-  if (financeYesterdayPrices[index])
+  if (financePrices[index] && financeYesterdayPrices[index])
   {
     float changeAmount = financePrices[index] - financeYesterdayPrices[index];
     float changePercent = (financePrices[index] / financeYesterdayPrices[index] - 1.0) * 100;
@@ -422,7 +432,7 @@ void TFTPrintFinanceInfo(uint8_t index)
   }
   else
   {
-    tft.setTextColor(0x39C4, TFT_BLACK);
+    tft.setTextColor(TFT_LIGHTGREY, TFT_BLACK);
     tft.drawString("--", x_pad + 65, y_pad + 112);
   }
 
@@ -635,27 +645,70 @@ void vTaskHttpGetCurrencyCallback(void *pvParameters)
 {
   while (true)
   {
-    HTTPClient httpClient;
-    httpClient.begin(currencyApiUrlLatest);
-    if (httpClient.GET() == HTTP_CODE_OK)
-    {
-      String payload;
-      JsonDocument doc;
-      payload = httpClient.getString();
-      deserializeJson(doc, payload);
+    struct tm tempTM = timeinfo;
+    tempTM.tm_hour -= 8; // gmt+8 to utc
+    mktime(&tempTM);
 
-      for (uint8_t i = STOCK_COUNT; i < FINANCE_TOTAL_COUNT; i++)
-      {
-        financeYesterdayPrices[i] == financePrices[i];
-        financePrices[i] = 1 / doc["data"][financeNumbers[i].substring(3)]["value"].as<float>();
-      }
-    }
-    else
+    uint32_t currentDateUTC = (tempTM.tm_year + 1900) * 10000 + (tempTM.tm_mon + 1) * 100 + tempTM.tm_mday;
+    if (currencyUpdateDateUTC < currentDateUTC)
     {
-      Serial.println("HTTP GET failed.");
+      HTTPClient httpClient;
+      // for get yesterday data
+      if (!financeYesterdayPrices[STOCK_COUNT])
+      {
+        tempTM.tm_mday -= 2;
+        mktime(&tempTM);
+        char previousDateBuffer[11];
+        strftime(previousDateBuffer, sizeof(previousDateBuffer), "%Y-%m-%d", &tempTM);
+        httpClient.begin(currencyApiUrlHistorical + previousDateBuffer);
+      }
+      else
+      {
+        httpClient.begin(currencyApiUrlLatest);
+      }
+
+      if (httpClient.GET() == HTTP_CODE_OK)
+      {
+        String payload;
+        JsonDocument doc;
+        payload = httpClient.getString();
+        deserializeJson(doc, payload);
+
+        preferences.begin("storage");
+        for (uint8_t i = STOCK_COUNT; i < FINANCE_TOTAL_COUNT; i++)
+        {
+          float fetchedPrice = 1 / doc["data"][financeNumbers[i].substring(3)]["value"].as<float>();
+          if (!financeYesterdayPrices[i])
+          {
+            financeYesterdayPrices[i] = fetchedPrice;
+            preferences.putFloat(("c_y_" + String(i)).c_str(), fetchedPrice);
+          }
+          else if (financeYesterdayPrices[i] && !financePrices[i])
+          {
+            financePrices[i] = fetchedPrice;
+            preferences.putFloat(("c_" + String(i)).c_str(), fetchedPrice);
+          }
+          else
+          {
+            financeYesterdayPrices[i] = financePrices[i];
+            financePrices[i] = fetchedPrice;
+            currencyUpdateDateUTC = currentDateUTC;
+            preferences.putFloat(("c_y_" + String(i)).c_str(), financeYesterdayPrices[i]);
+            preferences.putFloat(("c_" + String(i)).c_str(), financePrices[i]);
+            preferences.putUInt("c_date", currentDateUTC);
+          }
+        }
+        preferences.end();
+      }
+      else
+      {
+        Serial.println("HTTP GET failed.");
+      }
+      httpClient.end();
     }
-    httpClient.end();
-    vTaskDelay(pdMS_TO_TICKS(getRemainingMS(Next9oclock)));
+
+    //  pending for getting yesterday price in next round
+    vTaskDelay(pdMS_TO_TICKS((financeYesterdayPrices[STOCK_COUNT] && !financePrices[STOCK_COUNT]) ? 500 : getRemainingMS(Next8oclock)));
   }
 }
 
@@ -666,7 +719,7 @@ void vTaskHttpGetTWSECallback(void *pvParameters)
     if (financeIndex < STOCK_COUNT && (isTWSEOpening() || !financePrices[financeIndex]))
     {
       HTTPClient httpClient;
-      httpClient.begin(twseApiUrl + financeNumbers[financeIndex].substring(3) + ".tw");
+      httpClient.begin("https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_" + financeNumbers[financeIndex].substring(3) + ".tw");
       if (httpClient.GET() == HTTP_CODE_OK)
       {
         String payload;
@@ -688,7 +741,10 @@ void vTaskHttpGetTWSECallback(void *pvParameters)
 
     isFinancePrinted = false;
 
-    vTaskDelay(pdMS_TO_TICKS(getRemainingMS(isTWSEOpening() ? Next10sec : NextMinute)));
+    if (isTWSEOpening())
+      vTaskDelay(pdMS_TO_TICKS(getRemainingMS(Next10sec)));
+    else
+      vTaskDelay(pdMS_TO_TICKS(getRemainingMS(NextMinute)));
 
     if (financeIndex == FINANCE_TOTAL_COUNT - 1)
       financeIndex = 0;
@@ -802,7 +858,7 @@ void setup()
   tft.setCursor(0, 5);
 
   // connect to wifi
-  tft.print("[Wi-Fi]" + String(ssid));
+  tft.print("[Wi-Fi] " + String(ssid));
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED)
   {
@@ -810,29 +866,46 @@ void setup()
     tft.print(".");
   }
   tft.println("ok");
+  delay(1000);
 
   // setup ntp server
-  tft.print("[NTP]Setting up...");
+  tft.print("[NTP] Setup...");
   configTime(gmtOffset_sec, daylightOffset_sec, ntpServer);
   getLocalTime(&timeinfo);
   tft.println("ok");
+  delay(1000);
 
-  // setup queue & task
-  tft.print("[HTTP]Create tasks");
-  xTaskCreatePinnedToCore(vTaskHttpGetWeatherCallback, "task_http_get_weather", 4096, NULL, 3, &taskHttpGetWeather, 1);
+  // setup currency data from preferences
+  tft.print("[PREF] Setup...");
+  if (preferences.begin("storage", true))
+  {
+    for (uint8_t i = STOCK_COUNT; i < FINANCE_TOTAL_COUNT; i++)
+    {
+      financePrices[i] = preferences.getFloat(("c_" + String(i)).c_str(), 0.0F);
+      financeYesterdayPrices[i] = preferences.getFloat(("c_y_" + String(i)).c_str(), 0.0F);
+    }
+    currencyUpdateDateUTC = preferences.getUInt("c_date", 0U);
+    preferences.end();
+  }
+  tft.println("ok");
+  delay(1000);
+
+  // setup http tasks
+  tft.print("[HTTP] Create tasks");
+  xTaskCreatePinnedToCore(vTaskHttpGetWeatherCallback, "task_http_get_weather", 8192, NULL, 3, &taskHttpGetWeather, 0);
   delay(2000);
   tft.print(".");
-  xTaskCreatePinnedToCore(vTaskHttpGetCurrencyCallback, "task_http_get_currency", 8192, NULL, 4, &taskHttpGetCurrency, 1);
+  xTaskCreatePinnedToCore(vTaskHttpGetCurrencyCallback, "task_http_get_currency", 8192, NULL, 4, &taskHttpGetCurrency, 0);
   delay(2000);
   tft.print(".");
-  xTaskCreatePinnedToCore(vTaskHttpGetTWSECallback, "task_http_get_twse", 4096, NULL, 2, &taskHttpGetTWSE, 1);
+  xTaskCreatePinnedToCore(vTaskHttpGetTWSECallback, "task_http_get_twse", 8192, NULL, 2, &taskHttpGetTWSE, 0);
   delay(2000);
   tft.print(".");
   tft.println("ok");
 
   // setup complete
   tft.println("Welcome to ML-Display!");
-  delay(1000);
+  delay(2000);
   ChangeScreenState(MainScreen);
 }
 
