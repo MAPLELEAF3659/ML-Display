@@ -12,6 +12,7 @@
 
 #define FINANCE_TOTAL_COUNT 5 // stock + currency
 #define STOCK_COUNT 3
+#define TWSE_PERIOD 16200000 // 09:00~13:30 -> ms
 
 /*
 **Upload settings**
@@ -51,8 +52,8 @@ const char *ntpServer = "pool.ntp.org";
 const long gmtOffset_sec = 28800; // GMT+8
 const int daylightOffset_sec = 0;
 struct tm timeinfo;
-struct tm *timeinfo_ptr = &timeinfo;
 uint8_t secPrev, minPrev, hourPrev, dayPrev;
+bool isWorkingDay;
 //**NTP**
 
 //**TFT**
@@ -81,6 +82,7 @@ String currencyApiUrlHistorical = "https://api.currencyapi.com/v3/historical?api
 uint8_t financeIndex = 0;
 uint8_t financeIndexPrev = -1;
 bool isFinancePrinted = true;
+bool isTWSEOpening = false;
 int currencyUpdateDate;
 // si_ = stock index; se_ = stock ETF; sn_ = stock normal; cu_ = currency;
 String financeNumbers[FINANCE_TOTAL_COUNT] = {"si_t00", "se_0050", "sn_2330", "cu_JPY", "cu_USD"};
@@ -138,14 +140,7 @@ void ClearScreen(int startPoint, int endPoint, int perUnit)
   tft.setCursor(0, 0);
 }
 
-bool isTWSEOpening()
-{
-  int day = timeinfo_ptr->tm_hour;
-  int hour = timeinfo_ptr->tm_hour;
-  return ((day > 0 && day < 6) && (hour >= 9 && hour <= 14));
-}
-
-// **HTTP Get Tasks**
+// **Callbacks**
 void vTaskHttpGetCallback(void *pvParameters)
 {
   while (true)
@@ -205,11 +200,25 @@ void vTaskHttpGetCallback(void *pvParameters)
         break;
         case TWSE:
         {
-          if (doc["msgArray"][0]["z"] != "-")
+          if (req.index == -1) // update all
           {
-            financePrices[req.index] = doc["msgArray"][0]["z"].as<float>();
+            for (uint8_t i = 0; i < STOCK_COUNT; i++)
+            {
+              if (doc["msgArray"][0]["z"] != "-")
+              {
+                financePrices[i] = doc["msgArray"][0]["z"].as<float>();
+              }
+              financeYesterdayPrices[i] = doc["msgArray"][0]["y"].as<float>();
+            }
           }
-          financeYesterdayPrices[req.index] = doc["msgArray"][0]["y"].as<float>();
+          else // update specific index
+          {
+            if (doc["msgArray"][0]["z"] != "-")
+            {
+              financePrices[req.index] = doc["msgArray"][0]["z"].as<float>();
+            }
+            financeYesterdayPrices[req.index] = doc["msgArray"][0]["y"].as<float>();
+          }
           isFinancePrinted = false;
         }
         break;
@@ -686,6 +695,7 @@ void ScreenUIUpdateMain()
   if (timeinfo.tm_mday != dayPrev)
   {
     TFTPrintDate();
+    isWorkingDay = (timeinfo.tm_wday > 0 && timeinfo.tm_wday < 6);
 
     dayPrev = timeinfo.tm_mday;
   }
@@ -702,6 +712,7 @@ void ScreenUIUpdateMain()
       httpGetReq.index = 0;
       xQueueSend(queueHttpGet, &httpGetReq, 100);
     }
+    isTWSEOpening = (isWorkingDay && (timeinfo.tm_hour >= 9 && timeinfo.tm_hour <= 13));
 
     hourPrev = timeinfo.tm_hour;
   }
@@ -730,13 +741,24 @@ void ScreenUIUpdateMain()
   {
     TFTPrintSecBlink();
     TFTPrintTimeSec();
-    if (timeinfo.tm_sec % 5 == 0)
+
+    if (financeIndex < STOCK_COUNT && isTWSEOpening)
     {
-      if (financeIndex < STOCK_COUNT && isTWSEOpening())
+      if (timeinfo.tm_sec % 5 == 0)
       {
-        httpGetReq.type = TWSE;
-        httpGetReq.index = financeIndex;
-        xQueueSend(queueHttpGet, &httpGetReq, 100);
+        if (timeinfo.tm_hour > 13 && timeinfo.tm_min > 30)
+        {
+          httpGetReq.type = TWSE;
+          httpGetReq.index = -1;
+          xQueueSend(queueHttpGet, &httpGetReq, 100);
+          isTWSEOpening = false;
+        }
+        else
+        {
+          httpGetReq.type = TWSE;
+          httpGetReq.index = financeIndex;
+          xQueueSend(queueHttpGet, &httpGetReq, 100);
+        }
       }
     }
     else if (timeinfo.tm_sec == 0)
