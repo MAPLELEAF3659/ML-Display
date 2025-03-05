@@ -83,6 +83,7 @@ uint8_t financeIndex = 0;
 uint8_t financeIndexPrev = -1;
 bool isFinancePrinted = true;
 bool isTWSEOpening = false;
+bool isTWSEOpeningPrev = false;
 int currencyUpdateDate;
 // si_ = stock index; se_ = stock ETF; sn_ = stock normal; cu_ = currency;
 String financeNumbers[FINANCE_TOTAL_COUNT] = {"si_t00", "se_0050", "sn_2330", "cu_JPY", "cu_USD"};
@@ -703,16 +704,27 @@ void ScreenUIUpdateMain()
   // update by hour
   if (timeinfo.tm_hour != hourPrev)
   {
+    // update weather
     httpGetReq.type = Weather;
     httpGetReq.index = 0;
     xQueueSend(queueHttpGet, &httpGetReq, 100);
+
+    // update currency
     if (timeinfo.tm_hour == 8)
     {
       httpGetReq.type = Currency;
       httpGetReq.index = 0;
       xQueueSend(queueHttpGet, &httpGetReq, 100);
     }
-    isTWSEOpening = (isWorkingDay && (timeinfo.tm_hour >= 9 && timeinfo.tm_hour <= 13));
+
+    // update TWSE
+    isTWSEOpening = isWorkingDay && (timeinfo.tm_hour >= 9 && timeinfo.tm_hour <= 13);
+    if (isTWSEOpening && timeinfo.tm_hour == 9)
+    {
+      httpGetReq.type = TWSE;
+      httpGetReq.index = -1;
+      xQueueSend(queueHttpGet, &httpGetReq, 100);
+    }
 
     hourPrev = timeinfo.tm_hour;
   }
@@ -722,6 +734,13 @@ void ScreenUIUpdateMain()
   {
     // print time hh:mm
     TFTPrintTime();
+    if (isTWSEOpening && timeinfo.tm_hour == 13 && timeinfo.tm_min == 30)
+    {
+      httpGetReq.type = TWSE;
+      httpGetReq.index = -1;
+      xQueueSend(queueHttpGet, &httpGetReq, 100);
+      isTWSEOpening = false;
+    }
 
     if (financeIndex == FINANCE_TOTAL_COUNT - 1)
     {
@@ -742,23 +761,13 @@ void ScreenUIUpdateMain()
     TFTPrintSecBlink();
     TFTPrintTimeSec();
 
-    if (financeIndex < STOCK_COUNT && isTWSEOpening)
+    if (isTWSEOpening && financeIndex < STOCK_COUNT)
     {
       if (timeinfo.tm_sec % 5 == 0)
       {
-        if (timeinfo.tm_hour > 13 && timeinfo.tm_min > 30)
-        {
-          httpGetReq.type = TWSE;
-          httpGetReq.index = -1;
-          xQueueSend(queueHttpGet, &httpGetReq, 100);
-          isTWSEOpening = false;
-        }
-        else
-        {
-          httpGetReq.type = TWSE;
-          httpGetReq.index = financeIndex;
-          xQueueSend(queueHttpGet, &httpGetReq, 100);
-        }
+        httpGetReq.type = TWSE;
+        httpGetReq.index = financeIndex;
+        xQueueSend(queueHttpGet, &httpGetReq, 100);
       }
     }
     else if (timeinfo.tm_sec == 0)
@@ -806,8 +815,8 @@ void ChangeScreenState(ScreenState targetScreenState)
     hourPrev = -1;
     minPrev = -1;
     secPrev = -1;
-    financeIndex = 0;
-    financeIndexPrev = -1;
+    financeIndex = -1;
+    financeIndexPrev = -2;
     isFinancePrinted = false;
   }
   break;
