@@ -596,13 +596,13 @@ void TFTPrintPlayerSongMetadata(String value, int lineIndex)
 {
   // clear screen
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString("                               ", 0, y_pad + songMetadataYPosOffset - 2 + lineIndex * 17, 2);
+  tft.drawString("                       ", 0, y_pad + songMetadataYPosOffset - 2 + lineIndex * 17, 2);
 
   // load han character
   tft.loadFont(Cubic12);
 
   // print artist/album/title name
-  tft.setTextColor(0xFFFF, TFT_BLACK);
+  tft.setTextColor(0xFFFF);
   tft.drawString(value, x_pad, y_pad + songMetadataYPosOffset + lineIndex * 17);
 
   // unload han character
@@ -718,13 +718,14 @@ void ScreenUIUpdateMain()
     }
 
     // update TWSE
-    isTWSEOpening = isWorkingDay && (timeinfo.tm_hour >= 9 && timeinfo.tm_hour <= 13);
-    if (isTWSEOpening && timeinfo.tm_hour == 9)
+    bool isTWSEOpeningTemp = isWorkingDay && (timeinfo.tm_hour >= 9 && timeinfo.tm_hour <= 13);
+    if (isTWSEOpening != isTWSEOpeningTemp)
     {
       httpGetReq.type = TWSE;
       httpGetReq.index = -1;
       xQueueSend(queueHttpGet, &httpGetReq, 100);
     }
+    isTWSEOpening = isTWSEOpeningTemp;
 
     hourPrev = timeinfo.tm_hour;
   }
@@ -734,14 +735,7 @@ void ScreenUIUpdateMain()
   {
     // print time hh:mm
     TFTPrintTime();
-    if (isTWSEOpening && timeinfo.tm_hour == 13 && timeinfo.tm_min == 30)
-    {
-      httpGetReq.type = TWSE;
-      httpGetReq.index = -1;
-      xQueueSend(queueHttpGet, &httpGetReq, 100);
-      isTWSEOpening = false;
-    }
-
+    
     if (financeIndex == FINANCE_TOTAL_COUNT - 1)
     {
       financeIndex = 0;
@@ -927,22 +921,16 @@ void loop()
     serialMsg = Serial.readStringUntil('\n');
     ScreenState targetScreenState = (ScreenState)serialMsg.substring(0, serialMsg.indexOf('$')).toInt();
     ChangeScreenState(targetScreenState);
+    if (screenState == PlayerScreen){
+      ScreenUIUpdatePlayer(serialMsg);
+    }
+    serialMsg = "";
   }
 
   switch (screenState)
   {
   case MainScreen:
     ScreenUIUpdateMain();
-    break;
-  case PlayerScreen:
-    if (serialMsg)
-    {
-      ScreenUIUpdatePlayer(serialMsg);
-      serialMsg = "";
-    }
-    break;
-  default:
-    ClearScreen(0, 160, 5);
     break;
   }
 }
