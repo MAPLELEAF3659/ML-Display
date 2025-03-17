@@ -1,5 +1,5 @@
 # Name,   Type, SubType, Offset,  Size
-nvs,      data, nvs,     0x9000,  0x6000
-phy_init, data, phy,     0xf000,  0x1000
+nvs_keys, data, phy,     0x9000,  4K
 factory,  app,  factory, 0x10000, 8M
+nvs,      data, nvs,     ,        64K
 coredump, data, coredump,,        64K
