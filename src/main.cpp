@@ -159,6 +159,16 @@ void vTaskHttpGetCallback(void *pvParameters)
       break;
       case TWSE:
       {
+        if (req.index == 255) // 255 = update all
+        {
+          // queue all TWSE indexes
+          for (uint8_t i = 0; i < STOCK_COUNT; i++)
+          {
+            req.index = i;
+            xQueueSend(queueHttpGet, &req, 100);
+          }
+          continue;
+        }
         http.begin("https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_" + financeNumbers[req.index].substring(3) + ".tw");
       }
       break;
@@ -201,26 +211,16 @@ void vTaskHttpGetCallback(void *pvParameters)
         break;
         case TWSE:
         {
-          if (req.index == -1) // update all
+          // update specific index of stock
+          if (doc["msgArray"][0]["z"] != "-")
           {
-            for (uint8_t i = 0; i < STOCK_COUNT; i++)
-            {
-              if (doc["msgArray"][0]["z"] != "-")
-              {
-                financePrices[i] = doc["msgArray"][0]["z"].as<float>();
-              }
-              financeYesterdayPrices[i] = doc["msgArray"][0]["y"].as<float>();
-            }
-          }
-          else // update specific index
-          {
-            if (doc["msgArray"][0]["z"] != "-")
+            if (financePrices[req.index] != doc["msgArray"][0]["z"].as<float>())
             {
               financePrices[req.index] = doc["msgArray"][0]["z"].as<float>();
+              financeYesterdayPrices[req.index] = doc["msgArray"][0]["y"].as<float>();
+              isFinancePrinted = false;
             }
-            financeYesterdayPrices[req.index] = doc["msgArray"][0]["y"].as<float>();
           }
-          isFinancePrinted = false;
         }
         break;
         case Currency:
@@ -470,11 +470,11 @@ void TFTPrintFinanceInfo()
     // if number is stock in etf or index, then print its stock type
     if (financeNumbers[financeIndex].startsWith("se_"))
     {
-      type = "ETF";
+      type = "ETF ";
     }
     else if (financeNumbers[financeIndex].startsWith("si_"))
     {
-      type = "INDEX";
+      type = "INDEX ";
     }
     // if number is stock in normal or etf, then print its stock number
     if ((financeNumbers[financeIndex].startsWith("sn_") || financeNumbers[financeIndex].startsWith("se_")))
@@ -482,7 +482,7 @@ void TFTPrintFinanceInfo()
       number = financeNumbers[financeIndex].substring(3);
     }
     tft.setTextColor(0xFFFF, TFT_BLACK);
-    tft.drawString(financeNames[financeIndex] + "  " + type + "  " + number, x_pad + 5, y_pad + 92);
+    tft.drawString(financeNames[financeIndex] + "  " + type + number, x_pad + 5, y_pad + 92);
     financeIndexPrev = financeIndex;
   }
 
@@ -722,7 +722,7 @@ void ScreenUIUpdateMain()
     if (isTWSEOpening != isTWSEOpeningTemp)
     {
       httpGetReq.type = TWSE;
-      httpGetReq.index = -1;
+      httpGetReq.index = 255;
       xQueueSend(queueHttpGet, &httpGetReq, 100);
     }
     isTWSEOpening = isTWSEOpeningTemp;
@@ -735,7 +735,7 @@ void ScreenUIUpdateMain()
   {
     // print time hh:mm
     TFTPrintTime();
-    
+
     if (financeIndex == FINANCE_TOTAL_COUNT - 1)
     {
       financeIndex = 0;
@@ -877,29 +877,25 @@ void setup()
   xTaskCreatePinnedToCore(vTaskHttpGetCallback, "task_http_get", 8192, NULL, 1, &taskHttpGet, 0);
   tft.println("ok");
 
-  RequestHttpGet req;
-  tft.print("[HTTP] Update currency.");
-  req.type = Currency;
   if (currencyUpdateDate < (timeinfo.tm_year + 1900) * 10000 + (timeinfo.tm_mon + 1) * 100 + timeinfo.tm_mday)
   {
-    req.index = 0;
-    xQueueSend(queueHttpGet, &req, 100);
+    tft.print("[HTTP] Update currency");
+    httpGetReq.type = Currency;
+    httpGetReq.index = 0;
+    xQueueSend(queueHttpGet, &httpGetReq, 100);
     tft.print(".");
     delay(1000);
-    req.index = 1;
-    xQueueSend(queueHttpGet, &req, 100);
+    httpGetReq.index = 1;
+    xQueueSend(queueHttpGet, &httpGetReq, 100);
     tft.println(".ok");
   }
-  else
-  {
-    tft.println("skip");
-  }
+
   tft.print("[HTTP] Update TWSE");
-  req.type = TWSE;
-  for (uint8_t i = 0; i < STOCK_COUNT; i++)
+  httpGetReq.type = TWSE;
+  httpGetReq.index = 255;
+  xQueueSend(queueHttpGet, &httpGetReq, 100);
+  while (financePrices[STOCK_COUNT - 1] <= 0)
   {
-    req.index = i;
-    xQueueSend(queueHttpGet, &req, 100);
     delay(1000);
     tft.print(".");
   }
@@ -921,7 +917,8 @@ void loop()
     serialMsg = Serial.readStringUntil('\n');
     ScreenState targetScreenState = (ScreenState)serialMsg.substring(0, serialMsg.indexOf('$')).toInt();
     ChangeScreenState(targetScreenState);
-    if (screenState == PlayerScreen){
+    if (screenState == PlayerScreen)
+    {
       ScreenUIUpdatePlayer(serialMsg);
     }
     serialMsg = "";
