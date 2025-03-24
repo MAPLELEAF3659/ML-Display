@@ -12,7 +12,6 @@
 
 #define FINANCE_TOTAL_COUNT 5 // stock + currency
 #define STOCK_COUNT 3
-#define TWSE_PERIOD 16200000 // 09:00~13:30 -> ms
 
 /*
 **Upload settings**
@@ -141,12 +140,25 @@ void ClearScreen(int startPoint, int endPoint, int perUnit)
   tft.setCursor(0, 0);
 }
 
+void IncreaseFinanceIndex()
+{
+  if (financeIndex == FINANCE_TOTAL_COUNT - 1)
+  {
+    financeIndex = 0;
+  }
+  else
+  {
+    financeIndex++;
+  }
+}
+
 // **Callbacks**
 void vTaskHttpGetCallback(void *pvParameters)
 {
   while (true)
   {
     RequestHttpGet req;
+    uint8_t twseIndexPrev;
     if (xQueueReceive(queueHttpGet, &req, 1000) == pdTRUE)
     {
       HTTPClient http;
@@ -167,6 +179,7 @@ void vTaskHttpGetCallback(void *pvParameters)
             req.index = i;
             xQueueSend(queueHttpGet, &req, 100);
           }
+          twseIndexPrev = 255;
           continue;
         }
         http.begin("https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_" + financeNumbers[req.index].substring(3) + ".tw");
@@ -212,15 +225,21 @@ void vTaskHttpGetCallback(void *pvParameters)
         case TWSE:
         {
           // update specific index of stock
-          if (doc["msgArray"][0]["z"] != "-")
+          float financePricePrev = financePrices[req.index];
+          float financePriceNew = doc["msgArray"][0]["z"] != "-" ? doc["msgArray"][0]["z"].as<float>() : financePricePrev;
+          // update value only when [value is different] or [changing to next index] or [update all value mode(255)]
+          if (req.index == twseIndexPrev && financePricePrev != financePriceNew ||
+              req.index != twseIndexPrev ||
+              twseIndexPrev == 255)
           {
-            if (financePrices[req.index] != doc["msgArray"][0]["z"].as<float>())
-            {
-              financePrices[req.index] = doc["msgArray"][0]["z"].as<float>();
-              financeYesterdayPrices[req.index] = doc["msgArray"][0]["y"].as<float>();
-              isFinancePrinted = false;
-            }
+            financePrices[req.index] = financePriceNew;
+            financeYesterdayPrices[req.index] = doc["msgArray"][0]["y"].as<float>();
+            isFinancePrinted = false;
           }
+          // when [update all value mode is on(255)] update twseIndexPrev only when index is last one(finish update all)
+          // or normally update twseIndexPrev
+          if ((twseIndexPrev == 255 && req.index == STOCK_COUNT - 1) || twseIndexPrev < 255)
+            twseIndexPrev = req.index;
         }
         break;
         case Currency:
@@ -736,15 +755,6 @@ void ScreenUIUpdateMain()
     // print time hh:mm
     TFTPrintTime();
 
-    if (financeIndex == FINANCE_TOTAL_COUNT - 1)
-    {
-      financeIndex = 0;
-    }
-    else
-    {
-      financeIndex++;
-    }
-
     // update previous state
     minPrev = timeinfo.tm_min;
   }
@@ -755,18 +765,31 @@ void ScreenUIUpdateMain()
     TFTPrintSecBlink();
     TFTPrintTimeSec();
 
-    if (isTWSEOpening && financeIndex < STOCK_COUNT)
+    if (isTWSEOpening)
     {
-      if (timeinfo.tm_sec % 5 == 0)
+      if (timeinfo.tm_sec % 30 == 0) // change to next finance item index every 30 sec
+      {
+        IncreaseFinanceIndex();
+        // when current index is currency, only print it out
+        if (financeIndex >= STOCK_COUNT)
+          isFinancePrinted = false;
+      }
+      // when current index is TWSE(stock), update value every 5 sec
+      if (financeIndex < STOCK_COUNT && timeinfo.tm_sec % 5 == 0)
       {
         httpGetReq.type = TWSE;
         httpGetReq.index = financeIndex;
         xQueueSend(queueHttpGet, &httpGetReq, 100);
       }
     }
-    else if (timeinfo.tm_sec == 0)
+    else
     {
-      isFinancePrinted = false;
+      // when not in TWSE opening time, print finance every 60 sec
+      if (timeinfo.tm_sec == 0)
+      {
+        IncreaseFinanceIndex();
+        isFinancePrinted = false;
+      }
     }
 
     // update previous state
@@ -805,12 +828,12 @@ void ChangeScreenState(ScreenState targetScreenState)
   {
   case MainScreen:
   {
-    dayPrev = -1;
-    hourPrev = -1;
-    minPrev = -1;
-    secPrev = -1;
-    financeIndex = -1;
-    financeIndexPrev = -2;
+    dayPrev = 255;
+    hourPrev = 255;
+    minPrev = 255;
+    secPrev = 255;
+    financeIndex = 255;
+    financeIndexPrev = 255;
     isFinancePrinted = false;
   }
   break;
@@ -890,15 +913,11 @@ void setup()
     tft.println(".ok");
   }
 
-  tft.print("[HTTP] Update TWSE");
+  tft.print("[HTTP] Update TWSE...");
   httpGetReq.type = TWSE;
   httpGetReq.index = 255;
   xQueueSend(queueHttpGet, &httpGetReq, 100);
-  while (financePrices[STOCK_COUNT - 1] <= 0)
-  {
-    delay(1000);
-    tft.print(".");
-  }
+  delay(STOCK_COUNT * 500);
   tft.println("ok");
 
   // setup complete
