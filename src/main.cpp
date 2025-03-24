@@ -82,7 +82,6 @@ uint8_t financeIndex = 0;
 uint8_t financeIndexPrev = -1;
 bool isFinancePrinted = true;
 bool isTWSEOpening = false;
-bool isTWSEOpeningPrev = false;
 int currencyUpdateDate;
 // si_ = stock index; se_ = stock ETF; sn_ = stock normal; cu_ = currency;
 String financeNumbers[FINANCE_TOTAL_COUNT] = {"si_t00", "se_0050", "sn_2330", "cu_JPY", "cu_USD"};
@@ -142,7 +141,7 @@ void ClearScreen(int startPoint, int endPoint, int perUnit)
 
 void IncreaseFinanceIndex()
 {
-  if (financeIndex == FINANCE_TOTAL_COUNT - 1)
+  if (financeIndex >= FINANCE_TOTAL_COUNT - 1)
   {
     financeIndex = 0;
   }
@@ -229,17 +228,19 @@ void vTaskHttpGetCallback(void *pvParameters)
           float financePriceNew = doc["msgArray"][0]["z"] != "-" ? doc["msgArray"][0]["z"].as<float>() : financePricePrev;
           // update value only when [value is different] or [changing to next index] or [update all value mode(255)]
           if (req.index == twseIndexPrev && financePricePrev != financePriceNew ||
-              req.index != twseIndexPrev ||
+              req.index != twseIndexPrev && twseIndexPrev < 255 ||
               twseIndexPrev == 255)
           {
             financePrices[req.index] = financePriceNew;
             financeYesterdayPrices[req.index] = doc["msgArray"][0]["y"].as<float>();
-            isFinancePrinted = false;
           }
           // when [update all value mode is on(255)] update twseIndexPrev only when index is last one(finish update all)
           // or normally update twseIndexPrev
           if ((twseIndexPrev == 255 && req.index == STOCK_COUNT - 1) || twseIndexPrev < 255)
+          {
             twseIndexPrev = req.index;
+            isFinancePrinted = false;
+          }
         }
         break;
         case Currency:
@@ -736,15 +737,15 @@ void ScreenUIUpdateMain()
       xQueueSend(queueHttpGet, &httpGetReq, 100);
     }
 
-    // update TWSE
-    bool isTWSEOpeningTemp = isWorkingDay && (timeinfo.tm_hour >= 9 && timeinfo.tm_hour <= 13);
-    if (isTWSEOpening != isTWSEOpeningTemp)
+    // update TWSE Opening state
+    bool isTWSEOpeningPrev = isWorkingDay && (timeinfo.tm_hour >= 9 && timeinfo.tm_hour <= 13);
+    if (isTWSEOpening != isTWSEOpeningPrev)
     {
       httpGetReq.type = TWSE;
       httpGetReq.index = 255;
       xQueueSend(queueHttpGet, &httpGetReq, 100);
     }
-    isTWSEOpening = isTWSEOpeningTemp;
+    isTWSEOpening = isTWSEOpeningPrev;
 
     hourPrev = timeinfo.tm_hour;
   }
@@ -765,7 +766,7 @@ void ScreenUIUpdateMain()
     TFTPrintSecBlink();
     TFTPrintTimeSec();
 
-    if (isTWSEOpening)
+    if (isTWSEOpening && timeinfo.tm_hour <= 13 && timeinfo.tm_min <= 31)
     {
       if (timeinfo.tm_sec % 30 == 0) // change to next finance item index every 30 sec
       {
@@ -832,9 +833,12 @@ void ChangeScreenState(ScreenState targetScreenState)
     hourPrev = 255;
     minPrev = 255;
     secPrev = 255;
-    financeIndex = 255;
+    financeIndex = 0;
     financeIndexPrev = 255;
     isFinancePrinted = false;
+    tft.setTextColor(TFT_DARKGREY);
+    tft.drawString("LOADING", x_pad + 5, y_pad + 73, 1);
+    tft.drawString("LOADING", x_pad + 5, y_pad + 93, 1);
   }
   break;
   case PlayerScreen:
