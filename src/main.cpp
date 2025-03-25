@@ -233,13 +233,13 @@ void vTaskHttpGetCallback(void *pvParameters)
           {
             financePrices[req.index] = financePriceNew;
             financeYesterdayPrices[req.index] = doc["msgArray"][0]["y"].as<float>();
-          }
-          // when [update all value mode is on(255)] update twseIndexPrev only when index is last one(finish update all)
-          // or normally update twseIndexPrev
-          if ((twseIndexPrev == 255 && req.index == STOCK_COUNT - 1) || twseIndexPrev < 255)
-          {
-            twseIndexPrev = req.index;
-            isFinancePrinted = false;
+            // when [update all value mode is on(255)] update twseIndexPrev only when index is last one(finish update all)
+            // or normally update twseIndexPrev
+            if ((twseIndexPrev == 255 && req.index == STOCK_COUNT - 1) || twseIndexPrev < 255)
+            {
+              twseIndexPrev = req.index;
+              isFinancePrinted = false;
+            }
           }
         }
         break;
