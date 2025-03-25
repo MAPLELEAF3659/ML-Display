@@ -12,7 +12,6 @@
 
 #define FINANCE_TOTAL_COUNT 5 // stock + currency
 #define STOCK_COUNT 3
-#define TWSE_PERIOD 16200000 // 09:00~13:30 -> ms
 
 /*
 **Upload settings**
@@ -83,7 +82,6 @@ uint8_t financeIndex = 0;
 uint8_t financeIndexPrev = -1;
 bool isFinancePrinted = true;
 bool isTWSEOpening = false;
-bool isTWSEOpeningPrev = false;
 int currencyUpdateDate;
 // si_ = stock index; se_ = stock ETF; sn_ = stock normal; cu_ = currency;
 String financeNumbers[FINANCE_TOTAL_COUNT] = {"si_t00", "se_0050", "sn_2330", "cu_JPY", "cu_USD"};
@@ -141,12 +139,25 @@ void ClearScreen(int startPoint, int endPoint, int perUnit)
   tft.setCursor(0, 0);
 }
 
+void IncreaseFinanceIndex()
+{
+  if (financeIndex >= FINANCE_TOTAL_COUNT - 1)
+  {
+    financeIndex = 0;
+  }
+  else
+  {
+    financeIndex++;
+  }
+}
+
 // **Callbacks**
 void vTaskHttpGetCallback(void *pvParameters)
 {
   while (true)
   {
     RequestHttpGet req;
+    uint8_t twseIndexPrev;
     if (xQueueReceive(queueHttpGet, &req, 1000) == pdTRUE)
     {
       HTTPClient http;
@@ -159,6 +170,17 @@ void vTaskHttpGetCallback(void *pvParameters)
       break;
       case TWSE:
       {
+        if (req.index == 255) // 255 = update all
+        {
+          // queue all TWSE indexes
+          for (uint8_t i = 0; i < STOCK_COUNT; i++)
+          {
+            req.index = i;
+            xQueueSend(queueHttpGet, &req, 100);
+          }
+          twseIndexPrev = 255;
+          continue;
+        }
         http.begin("https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_" + financeNumbers[req.index].substring(3) + ".tw");
       }
       break;
@@ -201,26 +223,24 @@ void vTaskHttpGetCallback(void *pvParameters)
         break;
         case TWSE:
         {
-          if (req.index == -1) // update all
+          // update specific index of stock
+          float financePricePrev = financePrices[req.index];
+          float financePriceNew = doc["msgArray"][0]["z"] != "-" ? doc["msgArray"][0]["z"].as<float>() : financePricePrev;
+          // update value only when [value is different] or [changing to next index] or [update all value mode(255)]
+          if (req.index == twseIndexPrev && financePricePrev != financePriceNew ||
+              req.index != twseIndexPrev && twseIndexPrev < 255 ||
+              twseIndexPrev == 255)
           {
-            for (uint8_t i = 0; i < STOCK_COUNT; i++)
-            {
-              if (doc["msgArray"][0]["z"] != "-")
-              {
-                financePrices[i] = doc["msgArray"][0]["z"].as<float>();
-              }
-              financeYesterdayPrices[i] = doc["msgArray"][0]["y"].as<float>();
-            }
-          }
-          else // update specific index
-          {
-            if (doc["msgArray"][0]["z"] != "-")
-            {
-              financePrices[req.index] = doc["msgArray"][0]["z"].as<float>();
-            }
+            financePrices[req.index] = financePriceNew;
             financeYesterdayPrices[req.index] = doc["msgArray"][0]["y"].as<float>();
+            // when [update all value mode is on(255)] update twseIndexPrev only when index is last one(finish update all)
+            // or normally update twseIndexPrev
+            if ((twseIndexPrev == 255 && req.index == STOCK_COUNT - 1) || twseIndexPrev < 255)
+            {
+              twseIndexPrev = req.index;
+              isFinancePrinted = false;
+            }
           }
-          isFinancePrinted = false;
         }
         break;
         case Currency:
@@ -470,11 +490,11 @@ void TFTPrintFinanceInfo()
     // if number is stock in etf or index, then print its stock type
     if (financeNumbers[financeIndex].startsWith("se_"))
     {
-      type = "ETF";
+      type = "ETF ";
     }
     else if (financeNumbers[financeIndex].startsWith("si_"))
     {
-      type = "INDEX";
+      type = "INDEX ";
     }
     // if number is stock in normal or etf, then print its stock number
     if ((financeNumbers[financeIndex].startsWith("sn_") || financeNumbers[financeIndex].startsWith("se_")))
@@ -482,7 +502,7 @@ void TFTPrintFinanceInfo()
       number = financeNumbers[financeIndex].substring(3);
     }
     tft.setTextColor(0xFFFF, TFT_BLACK);
-    tft.drawString(financeNames[financeIndex] + "  " + type + "  " + number, x_pad + 5, y_pad + 92);
+    tft.drawString(financeNames[financeIndex] + "  " + type + number, x_pad + 5, y_pad + 92);
     financeIndexPrev = financeIndex;
   }
 
@@ -717,15 +737,15 @@ void ScreenUIUpdateMain()
       xQueueSend(queueHttpGet, &httpGetReq, 100);
     }
 
-    // update TWSE
-    bool isTWSEOpeningTemp = isWorkingDay && (timeinfo.tm_hour >= 9 && timeinfo.tm_hour <= 13);
-    if (isTWSEOpening != isTWSEOpeningTemp)
+    // update TWSE Opening state
+    bool isTWSEOpeningPrev = isWorkingDay && (timeinfo.tm_hour >= 9 && timeinfo.tm_hour <= 13);
+    if (isTWSEOpening != isTWSEOpeningPrev)
     {
       httpGetReq.type = TWSE;
-      httpGetReq.index = -1;
+      httpGetReq.index = 255;
       xQueueSend(queueHttpGet, &httpGetReq, 100);
     }
-    isTWSEOpening = isTWSEOpeningTemp;
+    isTWSEOpening = isTWSEOpeningPrev;
 
     hourPrev = timeinfo.tm_hour;
   }
@@ -735,15 +755,6 @@ void ScreenUIUpdateMain()
   {
     // print time hh:mm
     TFTPrintTime();
-    
-    if (financeIndex == FINANCE_TOTAL_COUNT - 1)
-    {
-      financeIndex = 0;
-    }
-    else
-    {
-      financeIndex++;
-    }
 
     // update previous state
     minPrev = timeinfo.tm_min;
@@ -755,18 +766,31 @@ void ScreenUIUpdateMain()
     TFTPrintSecBlink();
     TFTPrintTimeSec();
 
-    if (isTWSEOpening && financeIndex < STOCK_COUNT)
+    if (isTWSEOpening && timeinfo.tm_hour <= 13 && timeinfo.tm_min <= 31)
     {
-      if (timeinfo.tm_sec % 5 == 0)
+      if (timeinfo.tm_sec % 30 == 0) // change to next finance item index every 30 sec
+      {
+        IncreaseFinanceIndex();
+        // when current index is currency, only print it out
+        if (financeIndex >= STOCK_COUNT)
+          isFinancePrinted = false;
+      }
+      // when current index is TWSE(stock), update value every 5 sec
+      if (financeIndex < STOCK_COUNT && timeinfo.tm_sec % 5 == 0)
       {
         httpGetReq.type = TWSE;
         httpGetReq.index = financeIndex;
         xQueueSend(queueHttpGet, &httpGetReq, 100);
       }
     }
-    else if (timeinfo.tm_sec == 0)
+    else
     {
-      isFinancePrinted = false;
+      // when not in TWSE opening time, print finance every 60 sec
+      if (timeinfo.tm_sec == 0)
+      {
+        IncreaseFinanceIndex();
+        isFinancePrinted = false;
+      }
     }
 
     // update previous state
@@ -805,13 +829,16 @@ void ChangeScreenState(ScreenState targetScreenState)
   {
   case MainScreen:
   {
-    dayPrev = -1;
-    hourPrev = -1;
-    minPrev = -1;
-    secPrev = -1;
-    financeIndex = -1;
-    financeIndexPrev = -2;
+    dayPrev = 255;
+    hourPrev = 255;
+    minPrev = 255;
+    secPrev = 255;
+    financeIndex = 0;
+    financeIndexPrev = 255;
     isFinancePrinted = false;
+    tft.setTextColor(TFT_DARKGREY);
+    tft.drawString("LOADING", x_pad + 5, y_pad + 73, 1);
+    tft.drawString("LOADING", x_pad + 5, y_pad + 93, 1);
   }
   break;
   case PlayerScreen:
@@ -877,32 +904,24 @@ void setup()
   xTaskCreatePinnedToCore(vTaskHttpGetCallback, "task_http_get", 8192, NULL, 1, &taskHttpGet, 0);
   tft.println("ok");
 
-  RequestHttpGet req;
-  tft.print("[HTTP] Update currency.");
-  req.type = Currency;
   if (currencyUpdateDate < (timeinfo.tm_year + 1900) * 10000 + (timeinfo.tm_mon + 1) * 100 + timeinfo.tm_mday)
   {
-    req.index = 0;
-    xQueueSend(queueHttpGet, &req, 100);
+    tft.print("[HTTP] Update currency");
+    httpGetReq.type = Currency;
+    httpGetReq.index = 0;
+    xQueueSend(queueHttpGet, &httpGetReq, 100);
     tft.print(".");
     delay(1000);
-    req.index = 1;
-    xQueueSend(queueHttpGet, &req, 100);
+    httpGetReq.index = 1;
+    xQueueSend(queueHttpGet, &httpGetReq, 100);
     tft.println(".ok");
   }
-  else
-  {
-    tft.println("skip");
-  }
-  tft.print("[HTTP] Update TWSE");
-  req.type = TWSE;
-  for (uint8_t i = 0; i < STOCK_COUNT; i++)
-  {
-    req.index = i;
-    xQueueSend(queueHttpGet, &req, 100);
-    delay(1000);
-    tft.print(".");
-  }
+
+  tft.print("[HTTP] Update TWSE...");
+  httpGetReq.type = TWSE;
+  httpGetReq.index = 255;
+  xQueueSend(queueHttpGet, &httpGetReq, 100);
+  delay(STOCK_COUNT * 500);
   tft.println("ok");
 
   // setup complete
@@ -921,7 +940,8 @@ void loop()
     serialMsg = Serial.readStringUntil('\n');
     ScreenState targetScreenState = (ScreenState)serialMsg.substring(0, serialMsg.indexOf('$')).toInt();
     ChangeScreenState(targetScreenState);
-    if (screenState == PlayerScreen){
+    if (screenState == PlayerScreen)
+    {
       ScreenUIUpdatePlayer(serialMsg);
     }
     serialMsg = "";

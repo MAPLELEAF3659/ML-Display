@@ -2,6 +2,12 @@
 
 ## Installation
 
+1. Circuit
+
+    - ESP32-WROOM-32E 16MB + ST7735S 160x128
+
+    ![Circuit](circuit_image.png)
+
 1. Create ```secrets.h``` in ```include``` folder
 
     ```c
@@ -17,8 +23,10 @@
     ```
 
 1. Set upload settings
+
     - Board: ESP32 Dev Module
     - Partition Scheme: Custom(partitions.csv)
     - Flash Size: 16MB
     - Upload Speed: 921600
+
 1. Build & upload to ESP32
