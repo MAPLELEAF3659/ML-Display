@@ -1,5 +1,11 @@
 # ML Display
 
+An ESP32+TFT display with 2 screen:
+- Main Screen: an NTP clock and WebAPI data including weather, TWSE stock, currency.
+- Player Screen: connected to Foobar2000 running on Windows, and showing current playing song metadata, position, and synced lyrics.
+
+DEMO: [https://youtu.be/tnHw0xSMCKo](https://youtu.be/tnHw0xSMCKo)
+
 ## Installation
 
 1. Circuit
