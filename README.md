@@ -28,6 +28,11 @@ DEMO: [https://youtu.be/tnHw0xSMCKo](https://youtu.be/tnHw0xSMCKo)
     #define WIFI_PASSWORD "PASSWORD"
     ```
 
+1. Install library using PlatformIO
+
+    1. ArduinoJson v7.3.0
+    1. TFT_eSPI v2.5.43
+
 1. Set upload settings
 
     - Board: ESP32 Dev Module
