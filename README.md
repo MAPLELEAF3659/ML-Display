@@ -1,5 +1,11 @@
 # ML Display
 
+An ESP32+TFT display with 2 screen:
+- Main Screen: an NTP clock and WebAPI data including weather, TWSE stock, currency.
+- Player Screen: connected to Foobar2000 running on Windows, and showing current playing song metadata, position, and synced lyrics.
+
+DEMO: [https://youtu.be/tnHw0xSMCKo](https://youtu.be/tnHw0xSMCKo)
+
 ## Installation
 
 1. Circuit
@@ -21,6 +27,11 @@
     #define WIFI_SSID "SSID"
     #define WIFI_PASSWORD "PASSWORD"
     ```
+
+1. Install library using PlatformIO
+
+    1. ArduinoJson v7.3.0
+    1. TFT_eSPI v2.5.43
 
 1. Set upload settings
 

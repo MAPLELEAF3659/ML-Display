@@ -616,7 +616,7 @@ void TFTPrintPlayerSongMetadata(String value, int lineIndex)
 {
   // clear screen
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString("                       ", 0, y_pad + songMetadataYPosOffset - 2 + lineIndex * 17, 2);
+  tft.drawString("                             ", 0, y_pad + songMetadataYPosOffset - 2 + lineIndex * 17, 2);
 
   // load han character
   tft.loadFont(Cubic12);
