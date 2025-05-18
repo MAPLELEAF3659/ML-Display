@@ -458,7 +458,7 @@ void TFTPrintOpenWeatherInfo()
 
   // print description
   tft.setTextColor(0xFFFF, TFT_BLACK);
-  tft.drawString(weatherDesc, x_pad + 5, y_pad + 72);
+  tft.drawString(weatherDesc.length() >= 15 ? weatherDesc.substring(0, 15) + ".." : weatherDesc, x_pad + 5, y_pad + 72);
 
   // print temperature
   tft.setTextColor(TextColorByTemperature(weatherTemp), TFT_BLACK);
